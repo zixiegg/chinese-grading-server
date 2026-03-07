@@ -4,11 +4,14 @@ const multer = require('multer');
 require('dotenv').config();
 
 const app = express();
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 } // 限制 20MB
+});
 
 // 啟用 CORS - 允許前端訪問
 app.use(cors({
-  origin: '*', // 允許所有來源（開發時使用）
+  origin: '*',
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -76,6 +79,17 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
       return res.status(400).json({ success: false, message: '沒有提供文件或文字' });
     }
 
+    // 檢查文件大小（base64 大小約為原始大小的 4/3）
+    if (fileData) {
+      const estimatedSize = (fileData.length * 3) / 4; // base64 解碼後的估計大小
+      if (estimatedSize > 10 * 1024 * 1024) { // 10MB 限制
+        return res.status(400).json({ 
+          success: false, 
+          message: '文件太大，請上傳小於 10MB 的文件' 
+        });
+      }
+    }
+
     let result;
     if (apiType === 'gemini') {
       result = await extractWithGemini(apiKey, model, fileData, text, fileType);
@@ -119,9 +133,15 @@ app.post('/api/grade', async (req, res) => {
       return res.status(400).json({ success: false, message: '作文內容不能為空' });
     }
 
+    // 限制作文長度，避免 Token 超限
+    const maxLength = 15000; // 約 5000 個中文字
+    const truncatedText = essayText.length > maxLength 
+      ? essayText.substring(0, maxLength) + '\n\n[文章過長，已截斷]' 
+      : essayText;
+
     let result;
     if (apiType === 'gemini') {
-      result = await gradeWithGemini(apiKey, model, essayText, question, customCriteria);
+      result = await gradeWithGemini(apiKey, model, truncatedText, question, customCriteria);
     } else if (apiType === 'custom') {
       if (!baseURL) {
         return res.status(400).json({ 
@@ -129,9 +149,9 @@ app.post('/api/grade', async (req, res) => {
           message: '自定義 API 需要提供 API 基礎 URL' 
         });
       }
-      result = await gradeWithCustom(apiKey, baseURL, model, essayText, question, customCriteria);
+      result = await gradeWithCustom(apiKey, baseURL, model, truncatedText, question, customCriteria);
     } else if (apiType === 'openai') {
-      result = await gradeWithOpenAI(apiKey, model, essayText, question, customCriteria);
+      result = await gradeWithOpenAI(apiKey, model, truncatedText, question, customCriteria);
     } else {
       return res.status(400).json({ 
         success: false, 
@@ -158,9 +178,13 @@ app.post('/api/analyze-class', async (req, res) => {
       return res.status(400).json({ success: false, message: 'API 密鑰不能為空' });
     }
 
+    // 限制報告數量，避免 Token 超限
+    const maxReports = 30;
+    const limitedReports = reports.slice(0, maxReports);
+
     let result;
     if (apiType === 'gemini') {
-      result = await analyzeClassWithGemini(apiKey, model, reports, question);
+      result = await analyzeClassWithGemini(apiKey, model, limitedReports, question);
     } else if (apiType === 'custom') {
       if (!baseURL) {
         return res.status(400).json({ 
@@ -168,9 +192,9 @@ app.post('/api/analyze-class', async (req, res) => {
           message: '自定義 API 需要提供 API 基礎 URL' 
         });
       }
-      result = await analyzeClassWithCustom(apiKey, baseURL, model, reports, question);
+      result = await analyzeClassWithCustom(apiKey, baseURL, model, limitedReports, question);
     } else if (apiType === 'openai') {
-      result = await analyzeClassWithOpenAI(apiKey, model, reports, question);
+      result = await analyzeClassWithOpenAI(apiKey, model, limitedReports, question);
     } else {
       return res.status(400).json({ 
         success: false, 
@@ -237,17 +261,17 @@ async function testGeminiConnection(apiKey, modelName = 'gemini-2.0-flash') {
 
     const data = await response.json();
     const availableModels = data.models?.map(m => m.name) || [];
-    const isModelAvailable = availableModels.some(m => m === model || m.endsWith(modelName));
+    const isModelAvailable = availableModels.some(m => m === model || m.endsWith(normalizedModelName));
 
     return {
       success: true,
       message: isModelAvailable 
-        ? `Gemini API 連接成功！模型 "${modelName}" 可用`
-        : `API 連接成功！但模型 "${modelName}" 可能不可用。可用模型: ${availableModels.slice(0, 3).join(', ')}`,
-      model: modelName
+        ? `Gemini API 連接成功！模型 "${normalizedModelName}" 可用`
+        : `API 連接成功！但模型 "${normalizedModelName}" 可能不可用。可用模型: ${availableModels.slice(0, 3).join(', ')}`,
+      model: normalizedModelName
     };
   } catch (error) {
-    return handleGeminiError(error, modelName);
+    return handleGeminiError(error, normalizedModelName);
   }
 }
 
@@ -273,16 +297,18 @@ async function extractWithGemini(apiKey, modelName, fileData, text, fileType) {
 }`;
 
   let requestBody;
+  let isPdf = fileType && fileType.includes('pdf');
 
-  if (fileData && fileType && fileType.startsWith('image/')) {
-    // 圖片處理
+  if (fileData && (fileType?.startsWith('image/') || isPdf)) {
+    // 圖片或 PDF 處理 - 使用 Gemini 的多模態功能
+    const mimeType = isPdf ? 'application/pdf' : fileType;
     requestBody = {
       contents: [{
         parts: [
           { text: prompt },
           {
             inline_data: {
-              mime_type: fileType,
+              mime_type: mimeType,
               data: fileData
             }
           }
@@ -958,6 +984,13 @@ function handleGeminiError(error, modelName) {
     };
   }
   
+  if (message.includes('token') || message.includes('Token')) {
+    return { 
+      success: false, 
+      message: '輸入內容太長，超過了 Token 限制。請嘗試：1) 使用更小的文件 2) 分段處理 3) 使用支持更大上下文的模型' 
+    };
+  }
+  
   return { success: false, message: `連接失敗: ${message}` };
 }
 
@@ -982,6 +1015,13 @@ function handleOpenAIError(error, modelName) {
     return { 
       success: false, 
       message: 'API 密鑰無效，請檢查您的 API 密鑰' 
+    };
+  }
+  
+  if (message.includes('token') || message.includes('Token')) {
+    return { 
+      success: false, 
+      message: '輸入內容太長，超過了 Token 限制。請嘗試：1) 使用更小的文件 2) 分段處理 3) 使用支持更大上下文的模型' 
     };
   }
   

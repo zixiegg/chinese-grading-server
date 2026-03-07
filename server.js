@@ -27,7 +27,7 @@ app.get('/', (req, res) => {
 // 測試 API 連接
 app.post('/api/test', async (req, res) => {
   try {
-    const { apiKey, apiType, model } = req.body;
+    const { apiKey, apiType, model, baseURL } = req.body;
     
     if (!apiKey) {
       return res.status(400).json({ success: false, message: 'API 密鑰不能為空' });
@@ -36,9 +36,23 @@ app.post('/api/test', async (req, res) => {
     if (apiType === 'gemini') {
       const result = await testGeminiConnection(apiKey, model);
       return res.json(result);
-    } else {
+    } else if (apiType === 'custom') {
+      if (!baseURL) {
+        return res.status(400).json({ 
+          success: false, 
+          message: '自定義 API 需要提供 API 基礎 URL' 
+        });
+      }
+      const result = await testCustomConnection(apiKey, baseURL, model);
+      return res.json(result);
+    } else if (apiType === 'openai') {
       const result = await testOpenAIConnection(apiKey, model);
       return res.json(result);
+    } else {
+      return res.status(400).json({ 
+        success: false, 
+        message: '未知的 API 類型: ' + apiType 
+      });
     }
   } catch (error) {
     console.error('Test API error:', error);
@@ -52,7 +66,7 @@ app.post('/api/test', async (req, res) => {
 // OCR 提取文字
 app.post('/api/extract', upload.single('file'), async (req, res) => {
   try {
-    const { apiKey, apiType, model, fileType, fileData, text } = req.body;
+    const { apiKey, apiType, model, baseURL, fileType, fileData, text } = req.body;
     
     if (!apiKey) {
       return res.status(400).json({ success: false, message: 'API 密鑰不能為空' });
@@ -65,8 +79,21 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
     let result;
     if (apiType === 'gemini') {
       result = await extractWithGemini(apiKey, model, fileData, text, fileType);
-    } else {
+    } else if (apiType === 'custom') {
+      if (!baseURL) {
+        return res.status(400).json({ 
+          success: false, 
+          message: '自定義 API 需要提供 API 基礎 URL' 
+        });
+      }
+      result = await extractWithCustom(apiKey, baseURL, model, fileData, text, fileType);
+    } else if (apiType === 'openai') {
       result = await extractWithOpenAI(apiKey, model, fileData, text, fileType);
+    } else {
+      return res.status(400).json({ 
+        success: false, 
+        message: '未知的 API 類型: ' + apiType 
+      });
     }
 
     res.json({ success: true, ...result });
@@ -82,7 +109,7 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
 // 批改作文
 app.post('/api/grade', async (req, res) => {
   try {
-    const { apiKey, apiType, model, essayText, question, customCriteria } = req.body;
+    const { apiKey, apiType, model, baseURL, essayText, question, customCriteria } = req.body;
     
     if (!apiKey) {
       return res.status(400).json({ success: false, message: 'API 密鑰不能為空' });
@@ -95,8 +122,21 @@ app.post('/api/grade', async (req, res) => {
     let result;
     if (apiType === 'gemini') {
       result = await gradeWithGemini(apiKey, model, essayText, question, customCriteria);
-    } else {
+    } else if (apiType === 'custom') {
+      if (!baseURL) {
+        return res.status(400).json({ 
+          success: false, 
+          message: '自定義 API 需要提供 API 基礎 URL' 
+        });
+      }
+      result = await gradeWithCustom(apiKey, baseURL, model, essayText, question, customCriteria);
+    } else if (apiType === 'openai') {
       result = await gradeWithOpenAI(apiKey, model, essayText, question, customCriteria);
+    } else {
+      return res.status(400).json({ 
+        success: false, 
+        message: '未知的 API 類型: ' + apiType 
+      });
     }
 
     res.json({ success: true, ...result });
@@ -112,7 +152,7 @@ app.post('/api/grade', async (req, res) => {
 // 全班分析
 app.post('/api/analyze-class', async (req, res) => {
   try {
-    const { apiKey, apiType, model, reports, question } = req.body;
+    const { apiKey, apiType, model, baseURL, reports, question } = req.body;
     
     if (!apiKey) {
       return res.status(400).json({ success: false, message: 'API 密鑰不能為空' });
@@ -121,8 +161,21 @@ app.post('/api/analyze-class', async (req, res) => {
     let result;
     if (apiType === 'gemini') {
       result = await analyzeClassWithGemini(apiKey, model, reports, question);
-    } else {
+    } else if (apiType === 'custom') {
+      if (!baseURL) {
+        return res.status(400).json({ 
+          success: false, 
+          message: '自定義 API 需要提供 API 基礎 URL' 
+        });
+      }
+      result = await analyzeClassWithCustom(apiKey, baseURL, model, reports, question);
+    } else if (apiType === 'openai') {
       result = await analyzeClassWithOpenAI(apiKey, model, reports, question);
+    } else {
+      return res.status(400).json({ 
+        success: false, 
+        message: '未知的 API 類型: ' + apiType 
+      });
     }
 
     res.json({ success: true, ...result });
@@ -137,8 +190,39 @@ app.post('/api/analyze-class', async (req, res) => {
 
 // ============ Gemini API 函數 ============
 
+// 驗證和修正 Gemini 模型名稱
+function normalizeGeminiModelName(modelName) {
+  if (!modelName) return 'gemini-2.0-flash';
+  
+  // 移除 models/ 前綴（如果存在）
+  let name = modelName.startsWith('models/') ? modelName.substring(7) : modelName;
+  
+  // 常見的模型名稱映射
+  const modelMap = {
+    'gemini-1.5-flash': 'gemini-1.5-flash-latest',
+    'gemini-1.5-pro': 'gemini-1.5-pro-latest',
+    'gemini-1.0-pro': 'gemini-1.0-pro-latest',
+    'gemini-pro': 'gemini-1.0-pro-latest',
+  };
+  
+  // 如果名稱在映射中，使用映射後的名稱
+  if (modelMap[name]) {
+    return modelMap[name];
+  }
+  
+  // 如果名稱已經包含 -latest 或版本號，直接返回
+  if (name.includes('-latest') || /-\d{3}$/.test(name)) {
+    return name;
+  }
+  
+  // 否則返回原始名稱
+  return name;
+}
+
 async function testGeminiConnection(apiKey, modelName = 'gemini-2.0-flash') {
-  const model = modelName.startsWith('models/') ? modelName : `models/${modelName}`;
+  // 修正模型名稱
+  const normalizedModelName = normalizeGeminiModelName(modelName);
+  const model = `models/${normalizedModelName}`;
   
   try {
     const response = await fetch(
@@ -168,7 +252,9 @@ async function testGeminiConnection(apiKey, modelName = 'gemini-2.0-flash') {
 }
 
 async function extractWithGemini(apiKey, modelName, fileData, text, fileType) {
-  const model = modelName.startsWith('models/') ? modelName : `models/${modelName}`;
+  // 修正模型名稱
+  const normalizedModelName = normalizeGeminiModelName(modelName);
+  const model = `models/${normalizedModelName}`;
   
   const prompt = `你是一個專業的OCR文字識別助手。請從圖片或文檔中提取學生的作文文字。
 
@@ -257,7 +343,9 @@ async function extractWithGemini(apiKey, modelName, fileData, text, fileType) {
 }
 
 async function gradeWithGemini(apiKey, modelName, essayText, question, customCriteria) {
-  const model = modelName.startsWith('models/') ? modelName : `models/${modelName}`;
+  // 修正模型名稱
+  const normalizedModelName = normalizeGeminiModelName(modelName);
+  const model = `models/${normalizedModelName}`;
   
   const systemPrompt = buildGradingPrompt();
   const userPrompt = buildUserPrompt(essayText, question, customCriteria);
@@ -299,7 +387,9 @@ async function gradeWithGemini(apiKey, modelName, essayText, question, customCri
 }
 
 async function analyzeClassWithGemini(apiKey, modelName, reports, question) {
-  const model = modelName.startsWith('models/') ? modelName : `models/${modelName}`;
+  // 修正模型名稱
+  const normalizedModelName = normalizeGeminiModelName(modelName);
+  const model = `models/${normalizedModelName}`;
   
   const stats = {
     totalStudents: reports.length,
@@ -605,6 +695,236 @@ ${reports.map(r => `- ${r.studentWork?.name || '未命名'}: 總分${r.totalScor
   return JSON.parse(content);
 }
 
+// ============ 自定義 API 函數（支持任何 OpenAI 兼容 API） ============
+
+async function testCustomConnection(apiKey, baseURL, modelName) {
+  try {
+    // 確保 baseURL 以 /v1 結尾
+    const normalizedURL = baseURL.endsWith('/v1') ? baseURL : `${baseURL}/v1`;
+    
+    const response = await fetch(`${normalizedURL}/models`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${apiKey}` }
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error?.message || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const availableModels = data.data?.map(m => m.id) || [];
+    const isModelAvailable = availableModels.some(m => m === modelName);
+
+    return {
+      success: true,
+      message: isModelAvailable 
+        ? `API 連接成功！模型 "${modelName}" 可用`
+        : `API 連接成功！但模型 "${modelName}" 可能不可用。可用模型: ${availableModels.slice(0, 3).join(', ')}`,
+      model: modelName
+    };
+  } catch (error) {
+    return handleOpenAIError(error, modelName);
+  }
+}
+
+async function extractWithCustom(apiKey, baseURL, modelName, fileData, text, fileType) {
+  const model = modelName || 'gpt-4o';
+  const normalizedURL = baseURL.endsWith('/v1') ? baseURL : `${baseURL}/v1`;
+  
+  const systemPrompt = `你是一個專業的OCR文字識別助手。請從圖片或文檔中提取學生的作文文字。
+
+提取要求：
+1. 保持原文的段落格式
+2. 識別學生姓名和學號（通常在文章開頭或標題處）
+3. 只提取作文正文，不要包含題目（除非題目是文章的一部分）
+4. 保持所有標點符號
+5. 不要修改任何文字，包括錯別字
+
+請以JSON格式返回：
+{
+  "text": "提取的作文全文",
+  "name": "學生姓名（如無則留空）",
+  "studentId": "學生學號（如無則留空）"
+}`;
+
+  let messages;
+  
+  if (fileData && fileType && fileType.startsWith('image/')) {
+    messages = [
+      { role: 'system', content: systemPrompt },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: '請提取這張圖片中的學生作文文字，並識別姓名和學號。' },
+          { type: 'image_url', image_url: { url: `data:${fileType};base64,${fileData}` } }
+        ]
+      }
+    ];
+  } else {
+    const content = text || '';
+    messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `請提取以下文本中的學生作文內容：\n\n${content}` }
+    ];
+  }
+
+  const response = await fetch(`${normalizedURL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: model,
+      messages: messages,
+      temperature: 0.3,
+      max_tokens: 4000,
+      response_format: { type: 'json_object' }
+    })
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error?.message || 'API 請求失敗');
+  }
+
+  const data = await response.json();
+  const content = data.choices[0]?.message?.content;
+  
+  if (!content) {
+    throw new Error('API 返回內容為空');
+  }
+
+  const result = JSON.parse(content);
+  return {
+    text: result.text || '',
+    name: result.name || '',
+    studentId: result.studentId || ''
+  };
+}
+
+async function gradeWithCustom(apiKey, baseURL, modelName, essayText, question, customCriteria) {
+  const model = modelName || 'gpt-4o';
+  const normalizedURL = baseURL.endsWith('/v1') ? baseURL : `${baseURL}/v1`;
+  
+  const systemPrompt = buildGradingPrompt();
+  const userPrompt = buildUserPrompt(essayText, question, customCriteria);
+
+  const response = await fetch(`${normalizedURL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      temperature: 0.5,
+      max_tokens: 8000,
+      response_format: { type: 'json_object' }
+    })
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error?.message || 'API 請求失敗');
+  }
+
+  const data = await response.json();
+  const content = data.choices[0]?.message?.content;
+  
+  if (!content) {
+    throw new Error('API 返回內容為空');
+  }
+
+  return parseGradingResult(content, essayText);
+}
+
+async function analyzeClassWithCustom(apiKey, baseURL, modelName, reports, question) {
+  const model = modelName || 'gpt-4o';
+  const normalizedURL = baseURL.endsWith('/v1') ? baseURL : `${baseURL}/v1`;
+  
+  const stats = {
+    totalStudents: reports.length,
+    averageScore: reports.reduce((sum, r) => sum + r.totalScore, 0) / reports.length,
+    contentAvg: reports.reduce((sum, r) => sum + r.grading.content, 0) / reports.length,
+    expressionAvg: reports.reduce((sum, r) => sum + r.grading.expression, 0) / reports.length,
+    structureAvg: reports.reduce((sum, r) => sum + r.grading.structure, 0) / reports.length,
+  };
+
+  const systemPrompt = `你是一位專業的香港中學中文科教師，正在分析全班學生的寫作表現。
+
+請根據學生的評分數據，從以下四個方面進行分析：
+1. 選材分析：學生選取素材的類型、優點和問題
+2. 扣題分析：學生對題目的理解程度、常見問題和改進建議
+3. 立意分析：學生立意的深度分佈、優點和問題
+4. 寫作手法分析：學生使用的寫作手法、優點和問題
+
+最後提供針對性的寫作教學建議。
+
+請以JSON格式返回：
+{
+  "materialAnalysis": "選材分析內容",
+  "relevanceAnalysis": "扣題分析內容",
+  "themeAnalysis": "立意分析內容",
+  "techniqueAnalysis": "寫作手法分析內容",
+  "teachingSuggestion": "寫作教學建議內容"
+}`;
+
+  const userPrompt = `請分析以下全班寫作數據：
+
+## 題目
+${question}
+
+## 統計數據
+- 總人數: ${stats.totalStudents}
+- 平均分: ${stats.averageScore.toFixed(1)}
+- 內容平均分: ${stats.contentAvg.toFixed(1)}
+- 表達平均分: ${stats.expressionAvg.toFixed(1)}
+- 結構平均分: ${stats.structureAvg.toFixed(1)}
+
+## 學生分數詳情
+${reports.map(r => `- ${r.studentWork?.name || '未命名'}: 總分${r.totalScore} (內容${r.grading.content}, 表達${r.grading.expression}, 結構${r.grading.structure}, 標點${r.grading.punctuation})`).join('\n')}
+
+請以專業教師的角度進行分析，並以JSON格式返回結果。`;
+
+  const response = await fetch(`${normalizedURL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      temperature: 0.5,
+      max_tokens: 8000,
+      response_format: { type: 'json_object' }
+    })
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error?.message || 'API 請求失敗');
+  }
+
+  const data = await response.json();
+  const content = data.choices[0]?.message?.content;
+  
+  if (!content) {
+    throw new Error('API 返回內容為空');
+  }
+
+  return JSON.parse(content);
+}
+
 // ============ 輔助函數 ============
 
 function handleGeminiError(error, modelName) {
@@ -647,7 +967,7 @@ function handleOpenAIError(error, modelName) {
   if (message.includes('quota') || message.includes('exceeded') || message.includes('429')) {
     return { 
       success: false, 
-      message: 'OpenAI API 配額已用完，請檢查您的賬戶配額' 
+      message: 'API 配額已用完，請檢查您的賬戶配額' 
     };
   }
   
@@ -661,7 +981,7 @@ function handleOpenAIError(error, modelName) {
   if (message.includes('401') || message.includes('Unauthorized')) {
     return { 
       success: false, 
-      message: 'API 密鑰無效，請檢查您的 OpenAI API 密鑰' 
+      message: 'API 密鑰無效，請檢查您的 API 密鑰' 
     };
   }
   

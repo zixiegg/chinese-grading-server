@@ -17,6 +17,7 @@ app.use(cors({
 
 app.use(express.json({ limit: '50mb' }));
 
+// 健康檢查
 app.get('/', (req, res) => {
   res.json({ 
     status: 'OK', 
@@ -25,6 +26,7 @@ app.get('/', (req, res) => {
   });
 });
 
+// 測試 API 連接
 app.post('/api/test', async (req, res) => {
   try {
     const { apiKey, apiType, model, baseURL } = req.body;
@@ -54,6 +56,7 @@ app.post('/api/test', async (req, res) => {
   }
 });
 
+// OCR 提取文字 - 支持多篇文章分篇
 app.post('/api/extract', async (req, res) => {
   try {
     const { apiKey, apiType, model, baseURL, fileType, fileData, text } = req.body;
@@ -89,6 +92,7 @@ app.post('/api/extract', async (req, res) => {
   }
 });
 
+// 批改作文
 app.post('/api/grade', async (req, res) => {
   try {
     const { apiKey, apiType, model, baseURL, essayText, question, customCriteria } = req.body;
@@ -127,6 +131,7 @@ app.post('/api/grade', async (req, res) => {
   }
 });
 
+// 全班分析
 app.post('/api/analyze-class', async (req, res) => {
   try {
     const { apiKey, apiType, model, baseURL, reports, question } = req.body;
@@ -159,6 +164,8 @@ app.post('/api/analyze-class', async (req, res) => {
   }
 });
 
+// ============ 輔助函數 ============
+
 function normalizeGeminiModelName(modelName) {
   if (!modelName) return 'gemini-2.0-flash';
   let name = modelName.startsWith('models/') ? modelName.substring(7) : modelName;
@@ -172,6 +179,45 @@ function normalizeGeminiModelName(modelName) {
   if (name.includes('-latest') || /-\d{3}$/.test(name)) return name;
   return name;
 }
+
+// 轉義 JSON 特殊字符
+function escapeForJSON(text) {
+  if (!text) return '';
+  return text
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t');
+}
+
+// 安全解析 JSON
+function safeJSONParse(text) {
+  try {
+    // 移除 markdown 代碼塊標記
+    let cleaned = text.replace(/```json\n?/g, '').replace(/\n?```/g, '').trim();
+    
+    // 嘗試直接解析
+    try {
+      return JSON.parse(cleaned);
+    } catch (e) {
+      // 如果失敗，嘗試修復常見問題
+      // 移除可能的 BOM 標記
+      cleaned = cleaned.replace(/^\uFEFF/, '');
+      // 嘗試提取 JSON 對象
+      const match = cleaned.match(/\{[\s\S]*\}/);
+      if (match) {
+        return JSON.parse(match[0]);
+      }
+      throw e;
+    }
+  } catch (error) {
+    console.error('JSON parse error:', error, 'Text:', text.substring(0, 200));
+    throw new Error('無法解析 AI 返回的 JSON 格式');
+  }
+}
+
+// ============ Gemini API 函數 ============
 
 async function testGeminiConnection(apiKey, modelName = 'gemini-2.0-flash') {
   const normalizedModelName = normalizeGeminiModelName(modelName);
@@ -210,32 +256,55 @@ async function extractWithGemini(apiKey, modelName, fileData, text, fileType) {
   
   console.log('extractWithGemini:', { model, fileType, hasFileData: !!fileData, hasText: !!text });
   
+  // 多篇文章分篇提取提示
   const prompt = `你是一個專業的OCR文字識別助手。請從圖片或文檔中提取學生的作文文字。
 
-提取要求：
-1. 保持原文的段落格式
-2. 識別學生姓名和學號（通常在文章開頭或標題處）
-3. 只提取作文正文，不要包含題目（除非題目是文章的一部分）
-4. 保持所有標點符號
-5. 不要修改任何文字，包括錯別字
+重要：如果文件中包含多篇學生作文（例如多個學生的作品），請識別並分開每一篇。
+對於每一篇，請提取：
+1. 學生姓名（通常在文章開頭或標題處）
+2. 學生學號/班級（如果有）
+3. 作文正文內容
 
-請以JSON格式返回：
+提取要求：
+- 保持原文的段落格式
+- 只提取作文正文，不要包含題目（除非題目是文章的一部分）
+- 保持所有標點符號
+- 不要修改任何文字，包括錯別字
+
+請以JSON格式返回，如果有多篇文章，請返回數組：
 {
-  "text": "提取的作文全文",
-  "name": "學生姓名（如無則留空）",
-  "studentId": "學生學號（如無則留空）"
+  "articles": [
+    {
+      "text": "第一篇作文全文",
+      "name": "學生姓名1",
+      "studentId": "學號1"
+    },
+    {
+      "text": "第二篇作文全文",
+      "name": "學生姓名2",
+      "studentId": "學號2"
+    }
+  ]
+}
+
+如果只有一篇文章，返回：
+{
+  "articles": [
+    {
+      "text": "作文全文",
+      "name": "學生姓名",
+      "studentId": "學號"
+    }
+  ]
 }`;
 
   let requestBody;
-  
-  // 關鍵判斷：檢查 fileType 是否為圖片或 PDF
   const isImage = fileType && fileType.startsWith('image/');
   const isPDF = fileType && (fileType === 'application/pdf' || fileType.includes('pdf'));
   
   console.log('Type check:', { isImage, isPDF, fileType });
 
   if (fileData && (isImage || isPDF)) {
-    // 使用 inline_data 模式 - Token 消耗大幅降低
     const mimeType = isPDF ? 'application/pdf' : fileType;
     console.log('Using inline_data mode with mimeType:', mimeType);
     
@@ -253,12 +322,11 @@ async function extractWithGemini(apiKey, modelName, fileData, text, fileType) {
       }],
       generationConfig: {
         temperature: 0.3,
-        maxOutputTokens: 4000,
+        maxOutputTokens: 8192,
         responseMimeType: 'application/json'
       }
     };
   } else {
-    // 純文字模式 - Token 消耗高
     console.log('Using text mode');
     const content = text || '';
     requestBody = {
@@ -269,7 +337,7 @@ async function extractWithGemini(apiKey, modelName, fileData, text, fileType) {
       }],
       generationConfig: {
         temperature: 0.3,
-        maxOutputTokens: 4000,
+        maxOutputTokens: 8192,
         responseMimeType: 'application/json'
       }
     };
@@ -296,13 +364,26 @@ async function extractWithGemini(apiKey, modelName, fileData, text, fileType) {
     throw new Error('Gemini API 返回內容為空');
   }
 
-  const jsonContent = content.replace(/```json\n?|\n?```/g, '').trim();
-  const result = JSON.parse(jsonContent);
+  const result = safeJSONParse(content);
   
+  // 支持多篇文章返回
+  if (result.articles && Array.isArray(result.articles) && result.articles.length > 0) {
+    // 返回第一篇文章作為主要結果，但保留所有文章信息
+    const firstArticle = result.articles[0];
+    return {
+      text: firstArticle.text || '',
+      name: firstArticle.name || '',
+      studentId: firstArticle.studentId || '',
+      articles: result.articles // 返回所有文章供前端處理
+    };
+  }
+  
+  // 兼容舊格式
   return {
     text: result.text || '',
     name: result.name || '',
-    studentId: result.studentId || ''
+    studentId: result.studentId || '',
+    articles: result.articles
   };
 }
 
@@ -319,7 +400,7 @@ async function gradeWithGemini(apiKey, modelName, essayText, question, customCri
     }],
     generationConfig: {
       temperature: 0.5,
-      maxOutputTokens: 8000,
+      maxOutputTokens: 8192,
       responseMimeType: 'application/json'
     }
   };
@@ -342,6 +423,17 @@ async function gradeWithGemini(apiKey, modelName, essayText, question, customCri
   const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
   
   if (!content) {
+    // 嘗試從其他候選人獲取內容
+    if (data.candidates && data.candidates.length > 1) {
+      for (let i = 1; i < data.candidates.length; i++) {
+        const altContent = data.candidates[i]?.content?.parts?.[0]?.text;
+        if (altContent) {
+          console.log('Using alternative candidate:', i);
+          const jsonContent = altContent.replace(/```json\n?|\n?```/g, '').trim();
+          return parseGradingResult(jsonContent, essayText);
+        }
+      }
+    }
     throw new Error('Gemini API 返回內容為空');
   }
 
@@ -403,7 +495,7 @@ ${reports.map(r => `- ${r.studentWork?.name || '未命名'}: 總分${r.totalScor
     }],
     generationConfig: {
       temperature: 0.5,
-      maxOutputTokens: 8000,
+      maxOutputTokens: 8192,
       responseMimeType: 'application/json'
     }
   };
@@ -432,6 +524,8 @@ ${reports.map(r => `- ${r.studentWork?.name || '未命名'}: 總分${r.totalScor
   const jsonContent = content.replace(/```json\n?|\n?```/g, '').trim();
   return JSON.parse(jsonContent);
 }
+
+// ============ OpenAI API 函數 ============
 
 async function testOpenAIConnection(apiKey, modelName = 'gpt-4o') {
   try {
@@ -555,7 +649,7 @@ async function gradeWithOpenAI(apiKey, modelName, essayText, question, customCri
         { role: 'user', content: userPrompt }
       ],
       temperature: 0.5,
-      max_tokens: 8000,
+      max_tokens: 4000,
       response_format: { type: 'json_object' }
     })
   });
@@ -635,7 +729,7 @@ ${reports.map(r => `- ${r.studentWork?.name || '未命名'}: 總分${r.totalScor
         { role: 'user', content: userPrompt }
       ],
       temperature: 0.5,
-      max_tokens: 8000,
+      max_tokens: 4000,
       response_format: { type: 'json_object' }
     })
   });
@@ -654,6 +748,8 @@ ${reports.map(r => `- ${r.studentWork?.name || '未命名'}: 總分${r.totalScor
 
   return JSON.parse(content);
 }
+
+// ============ 自定義 API 函數 ============
 
 async function testCustomConnection(apiKey, baseURL, modelName) {
   try {
@@ -781,7 +877,7 @@ async function gradeWithCustom(apiKey, baseURL, modelName, essayText, question, 
         { role: 'user', content: userPrompt }
       ],
       temperature: 0.5,
-      max_tokens: 8000,
+      max_tokens: 4000,
       response_format: { type: 'json_object' }
     })
   });
@@ -862,7 +958,7 @@ ${reports.map(r => `- ${r.studentWork?.name || '未命名'}: 總分${r.totalScor
         { role: 'user', content: userPrompt }
       ],
       temperature: 0.5,
-      max_tokens: 8000,
+      max_tokens: 4000,
       response_format: { type: 'json_object' }
     })
   });
@@ -873,7 +969,7 @@ ${reports.map(r => `- ${r.studentWork?.name || '未命名'}: 總分${r.totalScor
   }
 
   const data = await response.json();
-  const content = data.choices[0]?.message?.content;
+  const content = data.candidates[0]?.message?.content;
   
   if (!content) {
     throw new Error('API 返回內容為空');
@@ -881,6 +977,8 @@ ${reports.map(r => `- ${r.studentWork?.name || '未命名'}: 總分${r.totalScor
 
   return JSON.parse(content);
 }
+
+// ============ 錯誤處理函數 ============
 
 function handleGeminiError(error, modelName) {
   const message = error.message || '未知錯誤';
@@ -929,6 +1027,8 @@ function handleOpenAIError(error, modelName) {
   
   return { success: false, message: `連接失敗: ${message}` };
 }
+
+// ============ Prompt 和解析函數 ============
 
 function buildGradingPrompt() {
   return `你是一位專業的香港中學中文科教師，正在批改HKDSE中文卷二乙部命題寫作。
@@ -1031,7 +1131,7 @@ ${customCriteria ? `## 自定義批改準則\n${customCriteria}` : ''}
 }
 
 function parseGradingResult(content, essayText) {
-  const result = JSON.parse(content);
+  const result = safeJSONParse(content);
 
   const grading = {
     content: Math.max(1, Math.min(10, Math.round(result.grading?.content || 6))),

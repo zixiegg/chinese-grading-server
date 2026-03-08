@@ -3,6 +3,15 @@ const cors = require('cors');
 const multer = require('multer');
 require('dotenv').config();
 
+// 嘗試載入 mammoth 用於處理 Word 文件
+let mammoth = null;
+try {
+  mammoth = require('mammoth');
+  console.log('Mammoth loaded successfully for Word processing');
+} catch (e) {
+  console.log('Mammoth not available, Word files will be processed via API');
+}
+
 const app = express();
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -354,6 +363,29 @@ async function extractWithGemini(apiKey, modelName, fileData, text, fileType) {
   
   console.log('extractWithGemini:', { model, fileType, hasFileData: !!fileData, hasText: !!text });
   
+  // 檢查是否為 Word 文件
+  const isWord = fileType && (
+    fileType === 'application/msword' || 
+    fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    fileType.includes('word') ||
+    fileType.includes('doc')
+  );
+  
+  // 如果是 Word 文件且有 mammoth 庫，先提取文本
+  if (isWord && fileData && mammoth) {
+    try {
+      console.log('Processing Word file with mammoth');
+      const buffer = Buffer.from(fileData, 'base64');
+      const result = await mammoth.extractRawText({ buffer });
+      console.log('Word file extracted, length:', result.value.length);
+      text = result.value;
+      fileData = null; // 清除 fileData，使用提取的文本
+    } catch (wordError) {
+      console.error('Mammoth extraction failed:', wordError);
+      // 失敗時繼續使用原始方式
+    }
+  }
+  
   const prompt = `你是一個專業的OCR文字識別助手。請從圖片或文檔中提取學生的作文文字。
 
 【重要】分辨文章數量的規則：
@@ -390,10 +422,10 @@ async function extractWithGemini(apiKey, modelName, fileData, text, fileType) {
   const isImage = fileType && fileType.startsWith('image/');
   const isPDF = fileType && (fileType === 'application/pdf' || fileType.includes('pdf'));
   
-  console.log('Type check:', { isImage, isPDF, fileType });
+  console.log('Type check:', { isImage, isPDF, isWord, fileType });
 
-  if (fileData && (isImage || isPDF)) {
-    const mimeType = isPDF ? 'application/pdf' : fileType;
+  if (fileData && (isImage || isPDF || isWord)) {
+    const mimeType = isPDF ? 'application/pdf' : (isWord ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : fileType);
     console.log('Using inline_data mode with mimeType:', mimeType);
     
     requestBody = {
@@ -660,6 +692,23 @@ async function generatePracticalExamWithGemini(apiKey, modelName, fileData, text
 4. 新模擬卷必須符合用戶選擇的文體格式要求
 5. 用戶選擇的文體是：${genreNames[genre] || genre}
 
+【資料內容格式要求 - 必須遵守】
+- 資料內容必須以簡短段落、對話、列點的形式呈現
+- 不要使用一大段的連續文字
+- 可以使用：簡短對話、要點列舉、分段說明、表格數據等形式
+- 每個資料內容約200-300字，分為多個小段落
+
+【評分參考格式要求 - 必須遵守】
+- 內容訊息（2分）：以表格形式列出各項內容要點，包括主題、背景、意義等
+- 內容發展（8分）：以表格形式列出各項內容細項、意見、回應等
+- 格式要求：以表格形式列出格式評分標準
+- 行文組織的評分不用呈現
+
+【示範文章要求】
+- 示範文章字數不得超過599字
+- 必須符合該文體的格式要求
+- 能獲得高分的完整文章
+
 【輸出格式 - 必須是有效的JSON】
 {
   "examPaper": {
@@ -670,24 +719,40 @@ async function generatePracticalExamWithGemini(apiKey, modelName, fileData, text
     "question": "題目描述（詳細說明寫作任務）",
     "material1": {
       "title": "資料一標題",
-      "content": "資料一內容（約200-300字）"
+      "content": "資料一內容（以簡短段落、對話、列點形式呈現，約200-300字）"
     },
     "material2": {
       "title": "資料二標題",
-      "content": "資料二內容（約200-300字）"
+      "content": "資料二內容（以簡短段落、對話、列點形式呈現，約200-300字）"
     }
   },
   "markingScheme": {
-    "content": {
-      "infoPoints": ["內容要點1", "內容要點2", "內容要點3"],
-      "developmentPoints": ["發展要求1", "發展要求2", "發展要求3"]
+    "contentInfo": {
+      "title": "內容訊息（2分）",
+      "table": [
+        { "item": "主題/議題", "description": "準確點明主題" },
+        { "item": "背景", "description": "交代清楚背景" },
+        { "item": "意義/目的", "description": "說明寫作目的" }
+      ]
     },
-    "organization": {
-      "formatRequirements": ["格式要求1", "格式要求2", "格式要求3"],
-      "toneRequirements": ["語氣要求1", "語氣要求2"]
+    "contentDevelopment": {
+      "title": "內容發展（8分）",
+      "table": [
+        { "item": "內容細項1", "description": "具體說明要求", "score": "2分" },
+        { "item": "內容細項2", "description": "具體說明要求", "score": "2分" },
+        { "item": "意見/回應", "description": "表達清晰意見", "score": "2分" },
+        { "item": "整體發展", "description": "內容完整連貫", "score": "2分" }
+      ]
+    },
+    "formatRequirements": {
+      "title": "格式要求",
+      "table": [
+        { "item": "格式項目1", "requirement": "具體要求", "score": "扣分標準" },
+        { "item": "格式項目2", "requirement": "具體要求", "score": "扣分標準" }
+      ]
     }
   },
-  "modelEssay": "示範文章（一篇符合該文體格式、能獲得高分的完整文章，約500-800字）"
+  "modelEssay": "示範文章（一篇符合該文體格式、能獲得高分的完整文章，字數不得超過599字）"
 }
 
 請確保返回的是有效的JSON格式，不要包含任何markdown代碼塊標記。`;
@@ -921,6 +986,28 @@ async function testOpenAIConnection(apiKey, modelName = 'gpt-4o') {
 async function extractWithOpenAI(apiKey, modelName, fileData, text, fileType) {
   const model = modelName || 'gpt-4o';
   
+  // 檢查是否為 Word 文件
+  const isWord = fileType && (
+    fileType === 'application/msword' || 
+    fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    fileType.includes('word') ||
+    fileType.includes('doc')
+  );
+  
+  // 如果是 Word 文件且有 mammoth 庫，先提取文本
+  if (isWord && fileData && mammoth) {
+    try {
+      console.log('Processing Word file with mammoth (OpenAI)');
+      const buffer = Buffer.from(fileData, 'base64');
+      const result = await mammoth.extractRawText({ buffer });
+      console.log('Word file extracted, length:', result.value.length);
+      text = result.value;
+      fileData = null;
+    } catch (wordError) {
+      console.error('Mammoth extraction failed:', wordError);
+    }
+  }
+  
   const systemPrompt = `你是一個專業的OCR文字識別助手。請從圖片或文檔中提取學生的作文文字。
 
 【重要】分辨文章數量的規則：
@@ -1137,7 +1224,43 @@ async function generatePracticalExamWithOpenAI(apiKey, modelName, fileData, text
 3. 用戶選擇的文體是：${genreNames[genre] || genre}
 4. 新模擬卷必須符合該文體的格式要求
 
-請以JSON格式返回。`;
+【資料內容格式要求 - 必須遵守】
+- 資料內容必須以簡短段落、對話、列點的形式呈現
+- 不要使用一大段的連續文字
+- 可以使用：簡短對話、要點列舉、分段說明、表格數據等形式
+- 每個資料內容約200-300字，分為多個小段落
+
+【評分參考格式要求 - 必須遵守】
+- 內容訊息（2分）：以表格形式列出各項內容要點，包括主題、背景、意義等
+- 內容發展（8分）：以表格形式列出各項內容細項、意見、回應等
+- 格式要求：以表格形式列出格式評分標準
+- 行文組織的評分不用呈現
+
+【示範文章要求】
+- 示範文章字數不得超過599字
+- 必須符合該文體的格式要求
+- 能獲得高分的完整文章
+
+【輸出格式 - 必須是有效的JSON】
+{
+  "examPaper": {
+    "title": "試卷標題",
+    "time": "考試時間",
+    "marks": "佔分",
+    "instructions": ["考生須知1", "考生須知2"],
+    "question": "題目描述",
+    "material1": { "title": "資料一標題", "content": "資料一內容（以簡短段落、對話、列點形式）" },
+    "material2": { "title": "資料二標題", "content": "資料二內容（以簡短段落、對話、列點形式）" }
+  },
+  "markingScheme": {
+    "contentInfo": { "title": "內容訊息（2分）", "table": [{"item": "項目", "description": "說明"}] },
+    "contentDevelopment": { "title": "內容發展（8分）", "table": [{"item": "項目", "description": "說明", "score": "分數"}] },
+    "formatRequirements": { "title": "格式要求", "table": [{"item": "項目", "requirement": "要求", "score": "扣分"}] }
+  },
+  "modelEssay": "示範文章（字數不得超過599字）"
+}
+
+請以JSON格式返回，不要包含任何markdown代碼塊標記。`;
 
   let messages;
   
@@ -1303,6 +1426,28 @@ async function testCustomConnection(apiKey, baseURL, modelName) {
 async function extractWithCustom(apiKey, baseURL, modelName, fileData, text, fileType) {
   const model = modelName || 'gpt-4o';
   const normalizedURL = baseURL.endsWith('/v1') ? baseURL : `${baseURL}/v1`;
+  
+  // 檢查是否為 Word 文件
+  const isWord = fileType && (
+    fileType === 'application/msword' || 
+    fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    fileType.includes('word') ||
+    fileType.includes('doc')
+  );
+  
+  // 如果是 Word 文件且有 mammoth 庫，先提取文本
+  if (isWord && fileData && mammoth) {
+    try {
+      console.log('Processing Word file with mammoth (Custom API)');
+      const buffer = Buffer.from(fileData, 'base64');
+      const result = await mammoth.extractRawText({ buffer });
+      console.log('Word file extracted, length:', result.value.length);
+      text = result.value;
+      fileData = null;
+    } catch (wordError) {
+      console.error('Mammoth extraction failed:', wordError);
+    }
+  }
   
   const systemPrompt = `你是一個專業的OCR文字識別助手。請從圖片或文檔中提取學生的作文文字。
 
@@ -1508,9 +1653,49 @@ async function generatePracticalExamWithCustom(apiKey, baseURL, modelName, fileD
 
   const systemPrompt = `你是一位專業的DSE中文科試題設計專家。請分析用戶上傳的模擬卷，理解其主題和結構，然後生成一份全新的模擬卷。
 
-用戶選擇的文體是：${genreNames[genre] || genre}
+【重要要求】
+1. 新模擬卷必須保持與原卷相同的主題/主題方向
+2. 但內容必須完全不同（不同的情境、不同的資料、不同的具體要求）
+3. 用戶選擇的文體是：${genreNames[genre] || genre}
+4. 新模擬卷必須符合該文體的格式要求
 
-請以JSON格式返回。`;
+【資料內容格式要求 - 必須遵守】
+- 資料內容必須以簡短段落、對話、列點的形式呈現
+- 不要使用一大段的連續文字
+- 可以使用：簡短對話、要點列舉、分段說明、表格數據等形式
+- 每個資料內容約200-300字，分為多個小段落
+
+【評分參考格式要求 - 必須遵守】
+- 內容訊息（2分）：以表格形式列出各項內容要點，包括主題、背景、意義等
+- 內容發展（8分）：以表格形式列出各項內容細項、意見、回應等
+- 格式要求：以表格形式列出格式評分標準
+- 行文組織的評分不用呈現
+
+【示範文章要求】
+- 示範文章字數不得超過599字
+- 必須符合該文體的格式要求
+- 能獲得高分的完整文章
+
+【輸出格式 - 必須是有效的JSON】
+{
+  "examPaper": {
+    "title": "試卷標題",
+    "time": "考試時間",
+    "marks": "佔分",
+    "instructions": ["考生須知1", "考生須知2"],
+    "question": "題目描述",
+    "material1": { "title": "資料一標題", "content": "資料一內容（以簡短段落、對話、列點形式）" },
+    "material2": { "title": "資料二標題", "content": "資料二內容（以簡短段落、對話、列點形式）" }
+  },
+  "markingScheme": {
+    "contentInfo": { "title": "內容訊息（2分）", "table": [{"item": "項目", "description": "說明"}] },
+    "contentDevelopment": { "title": "內容發展（8分）", "table": [{"item": "項目", "description": "說明", "score": "分數"}] },
+    "formatRequirements": { "title": "格式要求", "table": [{"item": "項目", "requirement": "要求", "score": "扣分"}] }
+  },
+  "modelEssay": "示範文章（字數不得超過599字）"
+}
+
+請以JSON格式返回，不要包含任何markdown代碼塊標記。`;
 
   let messages;
   
@@ -1709,7 +1894,9 @@ function buildSecondaryGradingPrompt(contentPriority = false, enhancementDirecti
     ? '增潤時優先考慮記敘和抒情元素，讓文章更有情感感染力'
     : enhancementDirection === 'argumentative'
     ? '增潤時優先考慮說理和論證元素，讓文章更有說服力'
-    : '根據文章類型自動判斷增潤方向';
+    : enhancementDirection === 'descriptive'
+    ? '增潤時優先考慮描寫元素（景物描寫或人物描寫），讓文章更具畫面感和形象性'
+    : '根據文章類型自動判斷增潤方向（景物描寫/人物描寫/記敘抒情/議論說理）';
 
   const contentPriorityInstruction = contentPriority 
     ? '【以內容為主評分】請優先根據內容質量給分，結構分數可根據內容表現適度調整，但內容與結構分數一般不應相差超過2級' 

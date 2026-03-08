@@ -371,8 +371,11 @@ async function extractWithGemini(apiKey, modelName, fileData, text, fileType) {
     fileType.includes('doc')
   );
   
-  // 如果是 Word 文件且有 mammoth 庫，先提取文本
-  if (isWord && fileData && mammoth) {
+  // 如果是 Word 文件，必須使用 mammoth 提取文本
+  if (isWord && fileData) {
+    if (!mammoth) {
+      throw new Error('Word 文件處理需要 mammoth 庫，請確保已安裝 mammoth 套件 (npm install mammoth)');
+    }
     try {
       console.log('Processing Word file with mammoth');
       const buffer = Buffer.from(fileData, 'base64');
@@ -382,7 +385,7 @@ async function extractWithGemini(apiKey, modelName, fileData, text, fileType) {
       fileData = null; // 清除 fileData，使用提取的文本
     } catch (wordError) {
       console.error('Mammoth extraction failed:', wordError);
-      // 失敗時繼續使用原始方式
+      throw new Error(`無法提取 Word 文件內容: ${wordError.message}`);
     }
   }
   
@@ -422,10 +425,10 @@ async function extractWithGemini(apiKey, modelName, fileData, text, fileType) {
   const isImage = fileType && fileType.startsWith('image/');
   const isPDF = fileType && (fileType === 'application/pdf' || fileType.includes('pdf'));
   
-  console.log('Type check:', { isImage, isPDF, isWord, fileType });
+  console.log('Type check:', { isImage, isPDF, isWord: !!isWord, fileType, hasFileData: !!fileData, hasText: !!text });
 
-  if (fileData && (isImage || isPDF || isWord)) {
-    const mimeType = isPDF ? 'application/pdf' : (isWord ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : fileType);
+  if (fileData && (isImage || isPDF)) {
+    const mimeType = isPDF ? 'application/pdf' : fileType;
     console.log('Using inline_data mode with mimeType:', mimeType);
     
     requestBody = {
@@ -705,7 +708,12 @@ async function generatePracticalExamWithGemini(apiKey, modelName, fileData, text
 - 行文組織的評分不用呈現
 
 【示範文章要求】
-- 示範文章字數不得超過599字
+- 示範文章總字數不得超過550字
+- 文章結構要求：
+  * 開首：不多於80字（簡潔引入主題）
+  * 第二段：約200字（主要論點/內容發展）
+  * 第三段：約200字（進一步闡述/例子）
+  * 結尾：不多於70字（簡潔總結）
 - 必須符合該文體的格式要求
 - 能獲得高分的完整文章
 
@@ -994,8 +1002,11 @@ async function extractWithOpenAI(apiKey, modelName, fileData, text, fileType) {
     fileType.includes('doc')
   );
   
-  // 如果是 Word 文件且有 mammoth 庫，先提取文本
-  if (isWord && fileData && mammoth) {
+  // 如果是 Word 文件，必須使用 mammoth 提取文本
+  if (isWord && fileData) {
+    if (!mammoth) {
+      throw new Error('Word 文件處理需要 mammoth 庫，請確保已安裝 mammoth 套件 (npm install mammoth)');
+    }
     try {
       console.log('Processing Word file with mammoth (OpenAI)');
       const buffer = Buffer.from(fileData, 'base64');
@@ -1005,6 +1016,7 @@ async function extractWithOpenAI(apiKey, modelName, fileData, text, fileType) {
       fileData = null;
     } catch (wordError) {
       console.error('Mammoth extraction failed:', wordError);
+      throw new Error(`無法提取 Word 文件內容: ${wordError.message}`);
     }
   }
   
@@ -1237,7 +1249,12 @@ async function generatePracticalExamWithOpenAI(apiKey, modelName, fileData, text
 - 行文組織的評分不用呈現
 
 【示範文章要求】
-- 示範文章字數不得超過599字
+- 示範文章總字數不得超過550字
+- 文章結構要求：
+  * 開首：不多於80字（簡潔引入主題）
+  * 第二段：約200字（主要論點/內容發展）
+  * 第三段：約200字（進一步闡述/例子）
+  * 結尾：不多於70字（簡潔總結）
 - 必須符合該文體的格式要求
 - 能獲得高分的完整文章
 
@@ -1435,8 +1452,11 @@ async function extractWithCustom(apiKey, baseURL, modelName, fileData, text, fil
     fileType.includes('doc')
   );
   
-  // 如果是 Word 文件且有 mammoth 庫，先提取文本
-  if (isWord && fileData && mammoth) {
+  // 如果是 Word 文件，必須使用 mammoth 提取文本
+  if (isWord && fileData) {
+    if (!mammoth) {
+      throw new Error('Word 文件處理需要 mammoth 庫，請確保已安裝 mammoth 套件 (npm install mammoth)');
+    }
     try {
       console.log('Processing Word file with mammoth (Custom API)');
       const buffer = Buffer.from(fileData, 'base64');
@@ -1446,6 +1466,7 @@ async function extractWithCustom(apiKey, baseURL, modelName, fileData, text, fil
       fileData = null;
     } catch (wordError) {
       console.error('Mammoth extraction failed:', wordError);
+      throw new Error(`無法提取 Word 文件內容: ${wordError.message}`);
     }
   }
   
@@ -1672,7 +1693,12 @@ async function generatePracticalExamWithCustom(apiKey, baseURL, modelName, fileD
 - 行文組織的評分不用呈現
 
 【示範文章要求】
-- 示範文章字數不得超過599字
+- 示範文章總字數不得超過550字
+- 文章結構要求：
+  * 開首：不多於80字（簡潔引入主題）
+  * 第二段：約200字（主要論點/內容發展）
+  * 第三段：約200字（進一步闡述/例子）
+  * 結尾：不多於70字（簡潔總結）
 - 必須符合該文體的格式要求
 - 能獲得高分的完整文章
 

@@ -38,7 +38,7 @@ app.get('/', (req, res) => {
 // 測試 API 連接
 app.post('/api/test', async (req, res) => {
   try {
-    const { apiKey, apiType, model, baseURL } = req.body;
+    const { apiKey, apiType, model } = req.body;     const baseURL = req.body.baseURL || req.body.apiBaseURL;
     
     if (!apiKey) {
       return res.status(400).json({ success: false, message: 'API 密鑰不能為空' });
@@ -68,7 +68,7 @@ app.post('/api/test', async (req, res) => {
 // OCR 提取文字 - 支持多篇文章分篇
 app.post('/api/extract', async (req, res) => {
   try {
-    const { apiKey, apiType, model, baseURL, fileType, fileData, text } = req.body;
+    const { apiKey, apiType, model, fileType, fileData, text } = req.body;     const baseURL = req.body.baseURL || req.body.apiBaseURL;
     
     if (!apiKey) {
       return res.status(400).json({ success: false, message: 'API 密鑰不能為空' });
@@ -104,7 +104,7 @@ app.post('/api/extract', async (req, res) => {
 // 提取題目與評分準則
 app.post('/api/extract-question-criteria', async (req, res) => {
   try {
-    const { apiKey, apiType, model, baseURL, fileType, fileData, text } = req.body;
+    const { apiKey, apiType, model, fileType, fileData, text } = req.body;     const baseURL = req.body.baseURL || req.body.apiBaseURL;
     
     if (!apiKey) {
       return res.status(400).json({ success: false, message: 'API 密鑰不能為空' });
@@ -140,7 +140,7 @@ app.post('/api/extract-question-criteria', async (req, res) => {
 // 批改作文
 app.post('/api/grade', async (req, res) => {
   try {
-    const { apiKey, apiType, model, baseURL, essayText, question, customCriteria, gradingMode, contentPriority, enhancementDirection } = req.body;
+    const { apiKey, apiType, model, essayText, question, customCriteria, gradingMode, contentPriority, enhancementDirection } = req.body;     const baseURL = req.body.baseURL || req.body.apiBaseURL;
     
     if (!apiKey) {
       return res.status(400).json({ success: false, message: 'API 密鑰不能為空' });
@@ -179,7 +179,7 @@ app.post('/api/grade', async (req, res) => {
 // 生成實用寫作模擬卷（新邏輯：上傳模擬卷→生成新模擬卷）
 app.post('/api/generate-practical-exam', async (req, res) => {
   try {
-    const { apiKey, apiType, model, baseURL, fileData, fileType, text, genre } = req.body;
+    const { apiKey, apiType, model, fileData, fileType, text, genre } = req.body;     const baseURL = req.body.baseURL || req.body.apiBaseURL;
     
     if (!apiKey) {
       return res.status(400).json({ success: false, message: 'API 密鑰不能為空' });
@@ -217,7 +217,7 @@ app.post('/api/generate-practical-exam', async (req, res) => {
 // 全班分析
 app.post('/api/analyze-class', async (req, res) => {
   try {
-    const { apiKey, apiType, model, baseURL, reports, question, gradingMode } = req.body;
+    const { apiKey, apiType, model, reports, question, gradingMode } = req.body;     const baseURL = req.body.baseURL || req.body.apiBaseURL;
     
     if (!apiKey) {
       return res.status(400).json({ success: false, message: 'API 密鑰不能為空' });

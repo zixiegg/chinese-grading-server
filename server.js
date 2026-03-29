@@ -38,7 +38,7 @@ app.get('/', (req, res) => {
 // 測試 API 連接
 app.post('/api/test', async (req, res) => {
   try {
-    const { apiKey, apiType, model } = req.body;     const baseURL = req.body.baseURL || req.body.apiBaseURL;
+    const { apiKey, apiType, model, baseURL } = req.body;
     
     if (!apiKey) {
       return res.status(400).json({ success: false, message: 'API 密鑰不能為空' });
@@ -68,7 +68,7 @@ app.post('/api/test', async (req, res) => {
 // OCR 提取文字 - 支持多篇文章分篇
 app.post('/api/extract', async (req, res) => {
   try {
-    const { apiKey, apiType, model, fileType, fileData, text } = req.body;     const baseURL = req.body.baseURL || req.body.apiBaseURL;
+    const { apiKey, apiType, model, baseURL, fileType, fileData, text } = req.body;
     
     if (!apiKey) {
       return res.status(400).json({ success: false, message: 'API 密鑰不能為空' });
@@ -104,7 +104,7 @@ app.post('/api/extract', async (req, res) => {
 // 提取題目與評分準則
 app.post('/api/extract-question-criteria', async (req, res) => {
   try {
-    const { apiKey, apiType, model, fileType, fileData, text } = req.body;     const baseURL = req.body.baseURL || req.body.apiBaseURL;
+    const { apiKey, apiType, model, baseURL, fileType, fileData, text } = req.body;
     
     if (!apiKey) {
       return res.status(400).json({ success: false, message: 'API 密鑰不能為空' });
@@ -140,7 +140,7 @@ app.post('/api/extract-question-criteria', async (req, res) => {
 // 批改作文
 app.post('/api/grade', async (req, res) => {
   try {
-    const { apiKey, apiType, model, essayText, question, customCriteria, gradingMode, contentPriority, enhancementDirection } = req.body;     const baseURL = req.body.baseURL || req.body.apiBaseURL;
+    const { apiKey, apiType, model, baseURL, essayText, question, customCriteria, gradingMode, contentPriority, enhancementDirection } = req.body;
     
     if (!apiKey) {
       return res.status(400).json({ success: false, message: 'API 密鑰不能為空' });
@@ -179,7 +179,7 @@ app.post('/api/grade', async (req, res) => {
 // 生成實用寫作模擬卷（新邏輯：上傳模擬卷→生成新模擬卷）
 app.post('/api/generate-practical-exam', async (req, res) => {
   try {
-    const { apiKey, apiType, model, fileData, fileType, text, genre } = req.body;     const baseURL = req.body.baseURL || req.body.apiBaseURL;
+    const { apiKey, apiType, model, baseURL, fileData, fileType, text, genre, systemPrompt: clientSystemPrompt } = req.body;
     
     if (!apiKey) {
       return res.status(400).json({ success: false, message: 'API 密鑰不能為空' });
@@ -195,14 +195,14 @@ app.post('/api/generate-practical-exam', async (req, res) => {
 
     let result;
     if (apiType === 'gemini') {
-      result = await generatePracticalExamWithGemini(apiKey, model, fileData, text, fileType, genre);
+      result = await generatePracticalExamWithGemini(apiKey, model, fileData, text, fileType, genre, clientSystemPrompt);
     } else if (apiType === 'custom') {
       if (!baseURL) {
         return res.status(400).json({ success: false, message: '自定義 API 需要提供 API 基礎 URL' });
       }
-      result = await generatePracticalExamWithCustom(apiKey, baseURL, model, fileData, text, fileType, genre);
+      result = await generatePracticalExamWithCustom(apiKey, baseURL, model, fileData, text, fileType, genre, clientSystemPrompt);
     } else if (apiType === 'openai') {
-      result = await generatePracticalExamWithOpenAI(apiKey, model, fileData, text, fileType, genre);
+      result = await generatePracticalExamWithOpenAI(apiKey, model, fileData, text, fileType, genre, clientSystemPrompt);
     } else {
       return res.status(400).json({ success: false, message: '未知的 API 類型: ' + apiType });
     }
@@ -217,7 +217,7 @@ app.post('/api/generate-practical-exam', async (req, res) => {
 // 全班分析
 app.post('/api/analyze-class', async (req, res) => {
   try {
-    const { apiKey, apiType, model, reports, question, gradingMode } = req.body;     const baseURL = req.body.baseURL || req.body.apiBaseURL;
+    const { apiKey, apiType, model, baseURL, reports, question, gradingMode } = req.body;
     
     if (!apiKey) {
       return res.status(400).json({ success: false, message: 'API 密鑰不能為空' });
@@ -673,7 +673,7 @@ async function gradeWithGemini(apiKey, modelName, essayText, question, customCri
 }
 
 // 生成實用寫作模擬卷（新邏輯）
-async function generatePracticalExamWithGemini(apiKey, modelName, fileData, text, fileType, genre) {
+async function generatePracticalExamWithGemini(apiKey, modelName, fileData, text, fileType, genre, clientSystemPrompt) {
   const normalizedModelName = normalizeGeminiModelName(modelName);
   const model = `models/${normalizedModelName}`;
   
@@ -686,7 +686,9 @@ async function generatePracticalExamWithGemini(apiKey, modelName, fileData, text
     article: '專題文章'
   };
 
-  const prompt = `你是一位專業的DSE中文科試題設計專家。請分析用戶上傳的模擬卷，理解其主題和結構，然後生成一份全新的模擬卷。
+  const prompt = (clientSystemPrompt || '') + `
+
+你是一位專業的DSE中文科試題設計專家。請分析用戶上傳的模擬卷，理解其主題和結構，然後生成一份全新的模擬卷。
 
 【重要要求】
 1. AI分析上傳的模擬卷，理解其主題和結構
@@ -1216,7 +1218,7 @@ async function gradeWithOpenAI(apiKey, modelName, essayText, question, customCri
   return parseGradingResult(content, essayText, gradingMode);
 }
 
-async function generatePracticalExamWithOpenAI(apiKey, modelName, fileData, text, fileType, genre) {
+async function generatePracticalExamWithOpenAI(apiKey, modelName, fileData, text, fileType, genre, clientSystemPrompt) {
   const model = modelName || 'gpt-4o';
   
   const genreNames = {
@@ -1228,7 +1230,9 @@ async function generatePracticalExamWithOpenAI(apiKey, modelName, fileData, text
     article: '專題文章'
   };
 
-  const systemPrompt = `你是一位專業的DSE中文科試題設計專家。請分析用戶上傳的模擬卷，理解其主題和結構，然後生成一份全新的模擬卷。
+  const systemPrompt = (clientSystemPrompt || '') + `
+
+你是一位專業的DSE中文科試題設計專家。請分析用戶上傳的模擬卷，理解其主題和結構，然後生成一份全新的模擬卷。
 
 【重要要求】
 1. 新模擬卷必須保持與原卷相同的主題/主題方向
@@ -1659,7 +1663,7 @@ async function gradeWithCustom(apiKey, baseURL, modelName, essayText, question, 
   return parseGradingResult(content, essayText, gradingMode);
 }
 
-async function generatePracticalExamWithCustom(apiKey, baseURL, modelName, fileData, text, fileType, genre) {
+async function generatePracticalExamWithCustom(apiKey, baseURL, modelName, fileData, text, fileType, genre, clientSystemPrompt) {
   const model = modelName || 'gpt-4o';
   const normalizedURL = baseURL.endsWith('/v1') ? baseURL : `${baseURL}/v1`;
   
@@ -1672,7 +1676,9 @@ async function generatePracticalExamWithCustom(apiKey, baseURL, modelName, fileD
     article: '專題文章'
   };
 
-  const systemPrompt = `你是一位專業的DSE中文科試題設計專家。請分析用戶上傳的模擬卷，理解其主題和結構，然後生成一份全新的模擬卷。
+  const systemPrompt = (clientSystemPrompt || '') + `
+
+你是一位專業的DSE中文科試題設計專家。請分析用戶上傳的模擬卷，理解其主題和結構，然後生成一份全新的模擬卷。
 
 【重要要求】
 1. 新模擬卷必須保持與原卷相同的主題/主題方向

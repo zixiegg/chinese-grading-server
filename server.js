@@ -140,7 +140,7 @@ app.post('/api/extract-question-criteria', async (req, res) => {
 // 批改作文
 app.post('/api/grade', async (req, res) => {
   try {
-    const { apiKey, apiType, model, baseURL, essayText, question, customCriteria, gradingMode, contentPriority, enhancementDirection } = req.body;
+    const { apiKey, apiType, model, baseURL, essayText, question, customCriteria, gradingMode, contentPriority, enhancementDirection, genre, infoPoints, devItems, formatRequirements } = req.body;
     
     if (!apiKey) {
       return res.status(400).json({ success: false, message: 'API 密鑰不能為空' });
@@ -157,14 +157,14 @@ app.post('/api/grade', async (req, res) => {
 
     let result;
     if (apiType === 'gemini') {
-      result = await gradeWithGemini(apiKey, model, truncatedText, question, customCriteria, gradingMode, contentPriority, enhancementDirection);
+      result = await gradeWithGemini(apiKey, model, truncatedText, question, customCriteria, gradingMode, contentPriority, enhancementDirection, genre, infoPoints, devItems, formatRequirements);
     } else if (apiType === 'custom') {
       if (!baseURL) {
         return res.status(400).json({ success: false, message: '自定義 API 需要提供 API 基礎 URL' });
       }
-      result = await gradeWithCustom(apiKey, baseURL, model, truncatedText, question, customCriteria, gradingMode, contentPriority, enhancementDirection);
+      result = await gradeWithCustom(apiKey, baseURL, model, truncatedText, question, customCriteria, gradingMode, contentPriority, enhancementDirection, genre, infoPoints, devItems, formatRequirements);
     } else if (apiType === 'openai') {
-      result = await gradeWithOpenAI(apiKey, model, truncatedText, question, customCriteria, gradingMode, contentPriority, enhancementDirection);
+      result = await gradeWithOpenAI(apiKey, model, truncatedText, question, customCriteria, gradingMode, contentPriority, enhancementDirection, genre, infoPoints, devItems, formatRequirements);
     } else {
       return res.status(400).json({ success: false, message: '未知的 API 類型: ' + apiType });
     }
@@ -179,7 +179,7 @@ app.post('/api/grade', async (req, res) => {
 // 生成實用寫作模擬卷（新邏輯：上傳模擬卷→生成新模擬卷）
 app.post('/api/generate-practical-exam', async (req, res) => {
   try {
-    const { apiKey, apiType, model, baseURL, fileData, fileType, text, genre, systemPrompt: clientSystemPrompt } = req.body;
+    const { apiKey, apiType, model, baseURL, fileData, fileType, text, genre } = req.body;
     
     if (!apiKey) {
       return res.status(400).json({ success: false, message: 'API 密鑰不能為空' });
@@ -195,14 +195,14 @@ app.post('/api/generate-practical-exam', async (req, res) => {
 
     let result;
     if (apiType === 'gemini') {
-      result = await generatePracticalExamWithGemini(apiKey, model, fileData, text, fileType, genre, clientSystemPrompt);
+      result = await generatePracticalExamWithGemini(apiKey, model, fileData, text, fileType, genre);
     } else if (apiType === 'custom') {
       if (!baseURL) {
         return res.status(400).json({ success: false, message: '自定義 API 需要提供 API 基礎 URL' });
       }
-      result = await generatePracticalExamWithCustom(apiKey, baseURL, model, fileData, text, fileType, genre, clientSystemPrompt);
+      result = await generatePracticalExamWithCustom(apiKey, baseURL, model, fileData, text, fileType, genre);
     } else if (apiType === 'openai') {
-      result = await generatePracticalExamWithOpenAI(apiKey, model, fileData, text, fileType, genre, clientSystemPrompt);
+      result = await generatePracticalExamWithOpenAI(apiKey, model, fileData, text, fileType, genre);
     } else {
       return res.status(400).json({ success: false, message: '未知的 API 類型: ' + apiType });
     }
@@ -608,12 +608,12 @@ async function extractQuestionCriteriaWithGemini(apiKey, modelName, fileData, te
   return safeJSONParse(content, 'extract-question-criteria');
 }
 
-async function gradeWithGemini(apiKey, modelName, essayText, question, customCriteria, gradingMode = 'secondary', contentPriority = false, enhancementDirection = 'auto') {
+async function gradeWithGemini(apiKey, modelName, essayText, question, customCriteria, gradingMode = 'secondary', contentPriority = false, enhancementDirection = 'auto', genre = '', infoPoints = [], devItems = {}, formatRequirements = []) {
   const normalizedModelName = normalizeGeminiModelName(modelName);
   const model = `models/${normalizedModelName}`;
   
-  const systemPrompt = buildGradingPrompt(gradingMode, contentPriority, enhancementDirection);
-  const userPrompt = buildUserPrompt(essayText, question, customCriteria, gradingMode);
+  const systemPrompt = buildGradingPrompt(gradingMode, contentPriority, enhancementDirection, genre, infoPoints, devItems, formatRequirements);
+  const userPrompt = buildUserPrompt(essayText, question, customCriteria, gradingMode, genre);
 
   const requestBody = {
     contents: [{
@@ -673,7 +673,7 @@ async function gradeWithGemini(apiKey, modelName, essayText, question, customCri
 }
 
 // 生成實用寫作模擬卷（新邏輯）
-async function generatePracticalExamWithGemini(apiKey, modelName, fileData, text, fileType, genre, clientSystemPrompt) {
+async function generatePracticalExamWithGemini(apiKey, modelName, fileData, text, fileType, genre) {
   const normalizedModelName = normalizeGeminiModelName(modelName);
   const model = `models/${normalizedModelName}`;
   
@@ -686,9 +686,7 @@ async function generatePracticalExamWithGemini(apiKey, modelName, fileData, text
     article: '專題文章'
   };
 
-  const prompt = (clientSystemPrompt || '') + `
-
-你是一位專業的DSE中文科試題設計專家。請分析用戶上傳的模擬卷，理解其主題和結構，然後生成一份全新的模擬卷。
+  const prompt = `你是一位專業的DSE中文科試題設計專家。請分析用戶上傳的模擬卷，理解其主題和結構，然後生成一份全新的模擬卷。
 
 【重要要求】
 1. AI分析上傳的模擬卷，理解其主題和結構
@@ -1179,11 +1177,11 @@ async function extractQuestionCriteriaWithOpenAI(apiKey, modelName, fileData, te
   return JSON.parse(content);
 }
 
-async function gradeWithOpenAI(apiKey, modelName, essayText, question, customCriteria, gradingMode = 'secondary', contentPriority = false, enhancementDirection = 'auto') {
+async function gradeWithOpenAI(apiKey, modelName, essayText, question, customCriteria, gradingMode = 'secondary', contentPriority = false, enhancementDirection = 'auto', genre = '', infoPoints = [], devItems = {}, formatRequirements = []) {
   const model = modelName || 'gpt-4o';
   
-  const systemPrompt = buildGradingPrompt(gradingMode, contentPriority, enhancementDirection);
-  const userPrompt = buildUserPrompt(essayText, question, customCriteria, gradingMode);
+  const systemPrompt = buildGradingPrompt(gradingMode, contentPriority, enhancementDirection, genre, infoPoints, devItems, formatRequirements);
+  const userPrompt = buildUserPrompt(essayText, question, customCriteria, gradingMode, genre);
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -1218,7 +1216,7 @@ async function gradeWithOpenAI(apiKey, modelName, essayText, question, customCri
   return parseGradingResult(content, essayText, gradingMode);
 }
 
-async function generatePracticalExamWithOpenAI(apiKey, modelName, fileData, text, fileType, genre, clientSystemPrompt) {
+async function generatePracticalExamWithOpenAI(apiKey, modelName, fileData, text, fileType, genre) {
   const model = modelName || 'gpt-4o';
   
   const genreNames = {
@@ -1230,9 +1228,7 @@ async function generatePracticalExamWithOpenAI(apiKey, modelName, fileData, text
     article: '專題文章'
   };
 
-  const systemPrompt = (clientSystemPrompt || '') + `
-
-你是一位專業的DSE中文科試題設計專家。請分析用戶上傳的模擬卷，理解其主題和結構，然後生成一份全新的模擬卷。
+  const systemPrompt = `你是一位專業的DSE中文科試題設計專家。請分析用戶上傳的模擬卷，理解其主題和結構，然後生成一份全新的模擬卷。
 
 【重要要求】
 1. 新模擬卷必須保持與原卷相同的主題/主題方向
@@ -1623,12 +1619,12 @@ async function extractQuestionCriteriaWithCustom(apiKey, baseURL, modelName, fil
   return JSON.parse(content);
 }
 
-async function gradeWithCustom(apiKey, baseURL, modelName, essayText, question, customCriteria, gradingMode = 'secondary', contentPriority = false, enhancementDirection = 'auto') {
+async function gradeWithCustom(apiKey, baseURL, modelName, essayText, question, customCriteria, gradingMode = 'secondary', contentPriority = false, enhancementDirection = 'auto', genre = '', infoPoints = [], devItems = {}, formatRequirements = []) {
   const model = modelName || 'gpt-4o';
   const normalizedURL = baseURL.endsWith('/v1') ? baseURL : `${baseURL}/v1`;
   
-  const systemPrompt = buildGradingPrompt(gradingMode, contentPriority, enhancementDirection);
-  const userPrompt = buildUserPrompt(essayText, question, customCriteria, gradingMode);
+  const systemPrompt = buildGradingPrompt(gradingMode, contentPriority, enhancementDirection, genre, infoPoints, devItems, formatRequirements);
+  const userPrompt = buildUserPrompt(essayText, question, customCriteria, gradingMode, genre);
 
   const response = await fetch(`${normalizedURL}/chat/completions`, {
     method: 'POST',
@@ -1663,7 +1659,7 @@ async function gradeWithCustom(apiKey, baseURL, modelName, essayText, question, 
   return parseGradingResult(content, essayText, gradingMode);
 }
 
-async function generatePracticalExamWithCustom(apiKey, baseURL, modelName, fileData, text, fileType, genre, clientSystemPrompt) {
+async function generatePracticalExamWithCustom(apiKey, baseURL, modelName, fileData, text, fileType, genre) {
   const model = modelName || 'gpt-4o';
   const normalizedURL = baseURL.endsWith('/v1') ? baseURL : `${baseURL}/v1`;
   
@@ -1676,9 +1672,7 @@ async function generatePracticalExamWithCustom(apiKey, baseURL, modelName, fileD
     article: '專題文章'
   };
 
-  const systemPrompt = (clientSystemPrompt || '') + `
-
-你是一位專業的DSE中文科試題設計專家。請分析用戶上傳的模擬卷，理解其主題和結構，然後生成一份全新的模擬卷。
+  const systemPrompt = `你是一位專業的DSE中文科試題設計專家。請分析用戶上傳的模擬卷，理解其主題和結構，然後生成一份全新的模擬卷。
 
 【重要要求】
 1. 新模擬卷必須保持與原卷相同的主題/主題方向
@@ -1911,11 +1905,11 @@ function handleOpenAIError(error, modelName) {
 
 // ============ Prompt 和解析函數 ============
 
-function buildGradingPrompt(gradingMode = 'secondary', contentPriority = false, enhancementDirection = 'auto') {
+function buildGradingPrompt(gradingMode = 'secondary', contentPriority = false, enhancementDirection = 'auto', genre = '', infoPoints = [], devItems = {}, formatRequirements = []) {
   if (gradingMode === 'primary') {
     return buildPrimaryGradingPrompt();
   } else if (gradingMode === 'practical') {
-    return buildPracticalGradingPrompt();
+    return buildPracticalGradingPrompt(genre, infoPoints, devItems, formatRequirements);
   } else {
     return buildSecondaryGradingPrompt(contentPriority, enhancementDirection);
   }
@@ -2132,100 +2126,198 @@ function buildPrimaryGradingPrompt() {
 }`;
 }
 
-function buildPracticalGradingPrompt() {
-  return `你是一位專業的香港中學中文科教師，正在批改HKDSE中文卷二甲部實用寫作。
+function buildPracticalGradingPrompt(genre = '', infoPoints = [], devItems = {}, formatRequirements = []) {
 
-## 評分準則（必須嚴格遵守）
+  // 文體名稱對照
+  const genreNames = {
+    speech: '演講辭', letter: '書信／公開信', proposal: '建議書',
+    report: '報告', commentary: '評論文章', article: '專題文章'
+  };
+  const genreName = genreNames[genre] || genre || '實用文';
 
-### 內容（30分）- 分為「資訊」和「拓展」兩部分
+  // 行文語氣效果（按文體）
+  const toneGuide = {
+    speech:     '以「說明效果」為主：語氣親切，具感染力，能有效游說聽眾支持計劃。\n評分標準：\n- 9–10分：措詞準確，行文簡潔流暢；態度冷靜得體，修飾恰當，說明效果佳，頗能吸引聽眾關注。\n- 7–8分：措詞準確，行文達意流暢；態度冷靜，頗能說明計劃。\n- 5–6分：措詞大致準確，行文大致達意；態度尚算冷靜，說明效果一般。\n- 3–4分：措詞大致準確，行文達意；語氣頗多不當。\n- 1–2分：措詞、行文未能達意；語氣極多不當。\n- 0分：空白卷或答案完全錯誤。',
+    letter:     '以「游說／呼籲效果」為主（自薦信則以「自薦效果」為主）：語氣誠懇有禮，符合書信場合。\n評分標準：\n- 9–10分：措詞準確，行文簡潔流暢；態度誠懇，修飾恰當，游說效果佳。\n- 7–8分：措詞準確，行文達意流暢；態度誠懇，頗具游說效果。\n- 5–6分：措詞大致準確，行文大致達意；態度尚算誠懇，游說效果一般。\n- 3–4分：措詞大致準確，行文達意；語氣頗多不當。\n- 1–2分：措詞、行文未能達意；語氣極多不當。\n- 0分：空白卷或答案完全錯誤。',
+    proposal:   '以「說服效果」為主：語氣客觀正式，建議具體可行，具說服力。\n評分標準：\n- 9–10分：措詞準確，行文簡潔流暢；態度客觀，建議具體，說服效果佳。\n- 7–8分：措詞準確，行文達意流暢；態度客觀，頗具說服效果。\n- 5–6分：措詞大致準確，行文大致達意；說服效果一般。\n- 3–4分：措詞大致準確，行文達意；語氣頗多不當。\n- 1–2分：措詞、行文未能達意；語氣極多不當。\n- 0分：空白卷或答案完全錯誤。',
+    report:     '以「客觀匯報效果」為主：語氣正式客觀，資料呈現清晰有條理，避免主觀情感語句。\n評分標準：\n- 9–10分：措詞準確，行文簡潔流暢；語氣客觀正式，資料呈現清晰，匯報效果佳。\n- 7–8分：措詞準確，行文達意流暢；語氣客觀，匯報效果頗佳。\n- 5–6分：措詞大致準確，行文大致達意；語氣尚算客觀，匯報效果一般。\n- 3–4分：措詞大致準確，行文達意；語氣頗多不當。\n- 1–2分：措詞、行文未能達意；語氣極多不當。\n- 0分：空白卷或答案完全錯誤。',
+    commentary: '以「論證效果」為主：語氣客觀持平，立場清晰，論證有力。\n評分標準：\n- 9–10分：措詞準確，行文簡潔流暢；立場清晰，論證有力，論證效果佳。\n- 7–8分：措詞準確，行文達意流暢；立場大致清晰，論證效果頗佳。\n- 5–6分：措詞大致準確，行文大致達意；論證效果一般。\n- 3–4分：措詞大致準確，行文達意；語氣頗多不當。\n- 1–2分：措詞、行文未能達意；語氣極多不當。\n- 0分：空白卷或答案完全錯誤。',
+    article:    '以「說明效果」為主：語氣客觀，有說服力，能有效呼籲讀者。\n評分標準：\n- 9–10分：措詞準確，行文簡潔流暢；語氣客觀，說明清晰，頗能呼籲讀者。\n- 7–8分：措詞準確，行文達意流暢；語氣尚算客觀，說明效果頗佳。\n- 5–6分：措詞大致準確，行文大致達意；說明效果一般。\n- 3–4分：措詞大致準確，行文達意；語氣頗多不當。\n- 1–2分：措詞、行文未能達意；語氣極多不當。\n- 0分：空白卷或答案完全錯誤。',
+  };
+  const toneSection = toneGuide[genre] || '語氣須切合文體、對象及場合，以措詞行文為主。\n評分標準：\n- 9–10分：措詞準確，行文簡潔流暢；語氣切合文體，效果佳。\n- 7–8分：措詞準確，行文達意流暢；語氣大致切合文體。\n- 5–6分：措詞大致準確，行文大致達意；語氣尚算切合。\n- 1–2分：措詞、行文未能達意；語氣頗多不當。\n- 0分：空白卷或答案完全錯誤。';
 
-#### 資訊（最高6分）
-評分重點：是否準確提取和運用題目提供的資訊
+  // 資訊分考核項目
+  const infoCount = infoPoints.length || 3;
+  const infoList = infoPoints.length > 0
+    ? infoPoints.map((p, i) => `  ${i + 1}. ${p}`).join('\n')
+    : '  1. 計劃名稱／活動名稱\n  2. 計劃目的／背景\n  3. 寫作身份／動機';
+  const infoScoreDesc = `以下 ${infoCount} 項資料齊全得 2 分；只有 ${infoCount - 1} 項得 1 分；${infoCount - 2} 項或以下得 0 分。`;
 
-具體標準：
-- 5-6分: 能準確提取所有重要資訊，並適當運用
-- 3-4分: 能提取大部分資訊，運用尚算適當
-- 1-2分: 資訊提取不完整，運用不當
-- 0分: 未能提取或運用資訊
+  // 內容發展細項
+  const devDefaults = {
+    speech:     { label: '2項措施、4個措施細項、3項同學意見', fullCount: '2項措施＋4個措施細項＋3項同學意見', partCount: '部分細項' },
+    letter:     { label: '2項個人條件、4個條件細項、3項同學意見', fullCount: '2項個人條件＋4個條件細項＋3項同學意見', partCount: '部分細項' },
+    proposal:   { label: '2個建議、4個建議細項、3項同學意見', fullCount: '2個建議＋4個建議細項＋3項同學意見', partCount: '部分細項' },
+    report:     { label: '2個調查類別、4個調查意見、2個改善建議', fullCount: '2個調查類別＋4個調查意見＋2個改善建議', partCount: '部分類別或意見' },
+    commentary: { label: '2個目標、4項活動、4項同學意見', fullCount: '2個目標＋4項活動＋4項同學意見', partCount: '部分細項' },
+    article:    { label: '2個目標、4項活動細項、4項意見', fullCount: '2個目標＋4項活動細項＋4項意見', partCount: '部分細項' },
+  };
+  const devDefault = devDefaults[genre] || { label: '相關細項', fullCount: '全部細項', partCount: '部分細項' };
+  const devLabel = (devItems && devItems.label) ? devItems.label : devDefault.label;
+  const devFull = (devItems && devItems.fullCount) ? devItems.fullCount : devDefault.fullCount;
+  const devPart = (devItems && devItems.partCount) ? devItems.partCount : devDefault.partCount;
 
-#### 拓展（最高16分）
-評分重點：內容發展的充分性和說服力
+  // 格式要求
+  const formatDefaults = {
+    speech:     ['稱謂（先尊後卑）', '自我介紹', '文末致謝語（多謝各位）'],
+    letter:     ['上款／稱謂', '署名及啟告語', '日期'],
+    proposal:   ['上款', '標題（置中）', '署名', '日期'],
+    report:     ['稱謂／上款', '標題（置中）', '署名及啟告語', '日期'],
+    commentary: ['標題', '署名及身份'],
+    article:    ['標題', '署名及身份'],
+  };
+  const formatItems = (formatRequirements && formatRequirements.length > 0)
+    ? formatRequirements
+    : (formatDefaults[genre] || ['相關格式元素']);
+  const formatList = formatItems.map(f => `  • ${f}`).join('\n');
 
-具體標準：
-- 13-16分: 內容發展極為充分，論點清晰有力，說服力強
-- 9-12分: 內容發展充分，論點清晰，有說服力
-- 5-8分: 內容發展一般，論點尚算清晰
-- 1-4分: 內容發展不足，論點模糊
-- 0分: 幾乎沒有內容發展
+  return `你是一位專業的香港中學中文科教師，正在批改HKDSE中文卷二甲部（${genreName}）實用寫作。
+所有評語必須使用繁體中文。
 
-### 行文組織（20分）- 分為「語氣」和「組織」兩部分
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+評分準則（必須嚴格遵守）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+總分：50分
+內容（30分）= （資訊分 + 內容發展分）× 3
+行文語氣（10分）
+組織（10分）
 
-#### 語氣（最高10分）
-評分重點：語氣是否切合寫作情境、對象和目的
+━━━━━━━━━━━━
+一、資訊分（最高 2 分）
+━━━━━━━━━━━━
+評分邏輯：${infoScoreDesc}
+必須涵蓋的背景資訊項目：
+${infoList}
 
-具體標準：
-- 8-10分: 語氣極為切合，能因應情境、對象和目的調整
-- 5-7分: 語氣大致切合，偶有偏差
-- 2-4分: 語氣尚算切合，但有明顯偏差
-- 0-1分: 語氣不切合，嚴重影響溝通效果
+評分說明：
+- 2分：以上全部項目均提及，且準確
+- 1分：只提及其中 ${infoCount - 1} 項
+- 0分：只提及 ${infoCount - 2} 項或以下，或完全沒有
 
-#### 組織（最高10分）
-評分重點：結構是否清晰、條理分明
+━━━━━━━━━━━━
+二、內容發展分（最高 8 分）
+━━━━━━━━━━━━
+本題具體細項要求：${devLabel}
 
-具體標準：
-- 8-10分: 結構極為清晰，條理分明，過渡自然
-- 5-7分: 結構清晰，條理尚算分明
-- 2-4分: 結構一般，條理不夠清晰
-- 0-1分: 結構散亂，缺乏條理
+評分標準：
+┌──────────────────────────────┬──────────────────────────────────────────┬──────┐
+│ 內容項目                     │ 觀點、闡述                               │ 分數 │
+├──────────────────────────────┼──────────────────────────────────────────┼──────┤
+│ 齊全（${devFull}）           │ 針對性回應；觀點明確合理；理據充足，     │ 7–8分│
+│                              │ 闡述周全。                               │      │
+│                              │ 一般回應；觀點大致明確合理；理據、       │ 5–6分│
+│                              │ 闡述一般。                               │      │
+│                              │ 部分回應；觀點模糊／不合理。             │ 3–4分│
+│                              │ 甚少回應／缺回應；觀點極不合理。         │ 1–2分│
+├──────────────────────────────┼──────────────────────────────────────────┼──────┤
+│ 大致齊全（${devPart}）       │ 針對性回應；觀點明確合理；理據充足，     │ 5–6分│
+│                              │ 闡述周全。                               │      │
+│                              │ 一般回應；觀點大致明確合理；理據、       │ 3–4分│
+│                              │ 闡述一般。                               │      │
+│                              │ 甚少回應／缺回應；觀點極不合理。         │ 1–2分│
+├──────────────────────────────┼──────────────────────────────────────────┼──────┤
+│ 少量、不齊全（極少細項）     │ 針對性回應；觀點明確合理；理據充足，     │ 3–4分│
+│                              │ 闡述清晰。                               │      │
+│                              │ 部分回應；觀點模糊／不合理。             │ 1–2分│
+├──────────────────────────────┼──────────────────────────────────────────┼──────┤
+│ 欠缺                         │ 甚少回應／缺回應；觀點闕如／極不合理。  │ 0分  │
+└──────────────────────────────┴──────────────────────────────────────────┴──────┘
 
-### 格式要求
-不同文體有不同的格式要求，請根據具體文體評估格式是否正確。
+評分時必須：
+1. 先判斷學生涵蓋了哪些細項（齊全／大致齊全／少量不齊全／欠缺）
+2. 再根據回應質量（觀點、理據、闡述）在對應分數範圍內給分
+3. 重點評估學生能否把資料一的細項與資料二的情境交織回應，並加以合理拓展
 
-## 輸出格式
-請以JSON格式返回：
+━━━━━━━━━━━━
+三、行文語氣（最高 10 分）
+━━━━━━━━━━━━
+文體：${genreName}
+${toneSection}
+
+━━━━━━━━━━━━
+四、組織（最高 10 分）
+━━━━━━━━━━━━
+評分重點：結構完整性、詳略得宜、要點扣連
+
+格式核對（欠缺以下必備格式元素須扣分）：
+${formatList}
+扣分規則：欠缺 1–2 項扣 1 分；欠缺 3 項或以上扣 2 分；添加多餘格式（如不應有的祝頌語、日期等）扣 2 分
+
+組織評分標準：
+- 9–10分：結構完整；詳略得宜，鋪排有序；內容要點之間緊密扣連。（如有格式問題按上述規則扣分）
+- 7–8分：結構完整；詳略得宜，鋪排有序。
+- 5–6分：結構大致完整；詳略大致合宜，鋪排大致有序。
+- 3–4分（尚完整）：結構完整；詳略得宜，鋪排有序。／結構大致完整；詳略大致合宜，鋪排大致有序。
+- 1–2分：散亂／甚混亂：組織散亂；詳略失衡，鋪排失當。
+- 0分：空白卷或毫無組織可言。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+輸出格式（必須是有效的JSON）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {
   "grading": {
-    "info": 5,
-    "development": 12,
-    "tone": 8,
+    "info": 2,
+    "development": 6,
+    "tone": 7,
     "organization": 8
   },
-  "overallComment": "簡潔易明的總評",
+  "overallComment": "整體評語（繁體中文，3–5句）",
   "infoFeedback": {
-    "strengths": ["優點1"],
-    "improvements": ["改善建議1"]
+    "strengths": ["優點（繁體中文）"],
+    "improvements": ["改善建議（繁體中文）"]
   },
   "developmentFeedback": {
-    "strengths": ["優點1"],
-    "improvements": ["改善建議1"]
+    "strengths": ["優點（繁體中文）"],
+    "improvements": ["改善建議（繁體中文）"]
   },
   "toneFeedback": {
-    "strengths": ["優點1"],
-    "improvements": ["改善建議1"]
+    "strengths": ["優點（繁體中文）"],
+    "improvements": ["改善建議（繁體中文）"]
   },
   "organizationFeedback": {
-    "strengths": ["優點1"],
-    "improvements": ["改善建議1"]
+    "strengths": ["優點（繁體中文）"],
+    "improvements": ["改善建議（繁體中文）"]
   },
-  "formatIssues": ["格式問題1", "格式問題2"],
-  "enhancedText": "增潤後的文章",
-  "enhancementNotes": ["修改說明1"],
-  "modelEssay": "示範文章"
+  "formatIssues": ["具體格式問題（繁體中文）"],
+  "enhancedText": "增潤後的文章（繁體中文）",
+  "enhancementNotes": ["修改說明（繁體中文）"],
+  "modelEssay": "示範文章（繁體中文）"
 }`;
 }
 
-function buildUserPrompt(essayText, question, customCriteria, gradingMode = 'secondary') {
-  return `請批改以下學生作文：
+function buildUserPrompt(essayText, question, customCriteria, gradingMode = 'secondary', genre = '') {
+  const genreNames = {
+    speech: '演講辭', letter: '書信／公開信', proposal: '建議書',
+    report: '報告', commentary: '評論文章', article: '專題文章'
+  };
+  const genreNote = (gradingMode === 'practical' && genre)
+    ? `
+## 文體
+${genreNames[genre] || genre}
+` : '';
 
+  return `請批改以下學生實用文（若為命題寫作則批改作文）：
+${genreNote}
 ## 題目
 ${question || '（未提供題目）'}
 
 ## 學生作文
 ${essayText}
 
-${customCriteria ? `## 自定義批改準則\n${customCriteria}\n\n請將上述自定義準則與系統評分準則結合使用。` : ''}
-
-請嚴格按照評分準則進行批改，給出具體、有建設性的評語和建議，並以JSON格式返回結果。`;
+${customCriteria ? `## 上傳的評分準則（請結合系統評分準則一同使用）
+${customCriteria}
+` : ''}
+請嚴格按照評分準則進行批改，給出具體、有建設性的繁體中文評語，並以JSON格式返回結果。`;
 }
 
 function parseGradingResult(content, essayText, gradingMode = 'secondary') {

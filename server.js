@@ -526,16 +526,21 @@ async function extractQuestionCriteriaWithGemini(apiKey, modelName, fileData, te
   const normalizedModelName = normalizeGeminiModelName(modelName);
   const model = `models/${normalizedModelName}`;
   
-  const prompt = `你是一個專業的教育文件分析助手。請從文件中提取作文題目和評分準則。
+  const prompt = `你是一個專業的香港DSE中文科教育文件分析助手。請從文件中分別提取以下四項內容。
 
-請分析文件內容，識別並提取：
-1. 題目：作文的題目要求
-2. 評分準則：如果有提供評分準則，請完整提取；如果沒有，請返回空字符串
+文件可能是一份完整的實用寫作練習卷，包含題目、資料一、資料二和評分參考（評卷參考）。請仔細分析並分別提取：
 
-請以JSON格式返回：
+1. question（題目）：作文的題目要求，即「試以……名義，撰寫……」的完整題目句子
+2. materials（資料內容）：資料一和資料二的完整內容，包含標題和正文，保留原有格式
+3. criteria（評分準則）：評分參考或評卷參考的內容（如無則為空字符串）
+
+重要：所有內容必須使用繁體中文，完整保留原文，不可省略或改寫。
+
+請只返回有效的JSON格式，不要加任何說明或markdown：
 {
-  "question": "提取的題目內容",
-  "criteria": "提取的評分準則（如無則為空字符串）"
+  "question": "題目完整內容",
+  "materials": "資料一和資料二的完整內容",
+  "criteria": "評分準則內容（如無則為空字符串）"
 }`;
 
   let requestBody;
@@ -1117,16 +1122,21 @@ async function extractWithOpenAI(apiKey, modelName, fileData, text, fileType) {
 async function extractQuestionCriteriaWithOpenAI(apiKey, modelName, fileData, text, fileType) {
   const model = modelName || 'gpt-4o';
   
-  const systemPrompt = `你是一個專業的教育文件分析助手。請從文件中提取作文題目和評分準則。
+  const systemPrompt = `你是一個專業的香港DSE中文科教育文件分析助手。請從文件中分別提取以下四項內容。
 
-請分析文件內容，識別並提取：
-1. 題目：作文的題目要求
-2. 評分準則：如果有提供評分準則，請完整提取；如果沒有，請返回空字符串
+文件可能是一份完整的實用寫作練習卷，包含題目、資料一、資料二和評分參考（評卷參考）。請仔細分析並分別提取：
 
-請以JSON格式返回：
+1. question（題目）：作文的題目要求，即「試以……名義，撰寫……」的完整題目句子
+2. materials（資料內容）：資料一和資料二的完整內容，包含標題和正文，保留原有格式
+3. criteria（評分準則）：評分參考或評卷參考的內容（如無則為空字符串）
+
+重要：所有內容必須使用繁體中文，完整保留原文，不可省略或改寫。
+
+請只返回有效的JSON格式，不要加任何說明或markdown：
 {
-  "question": "提取的題目內容",
-  "criteria": "提取的評分準則（如無則為空字符串）"
+  "question": "題目完整內容",
+  "materials": "資料一和資料二的完整內容",
+  "criteria": "評分準則內容（如無則為空字符串）"
 }`;
 
   let messages;
@@ -1565,12 +1575,21 @@ async function extractQuestionCriteriaWithCustom(apiKey, baseURL, modelName, fil
   const model = modelName || 'gpt-4o';
   const normalizedURL = baseURL.endsWith('/v1') ? baseURL : `${baseURL}/v1`;
   
-  const systemPrompt = `你是一個專業的教育文件分析助手。請從文件中提取作文題目和評分準則。
+  const systemPrompt = `你是一個專業的香港DSE中文科教育文件分析助手。請從文件中分別提取以下四項內容。
 
-請以JSON格式返回：
+文件可能是一份完整的實用寫作練習卷，包含題目、資料一、資料二和評分參考（評卷參考）。請仔細分析並分別提取：
+
+1. question（題目）：作文的題目要求，即「試以……名義，撰寫……」的完整題目句子
+2. materials（資料內容）：資料一和資料二的完整內容，包含標題和正文，保留原有格式
+3. criteria（評分準則）：評分參考或評卷參考的內容（如無則為空字符串）
+
+重要：所有內容必須使用繁體中文，完整保留原文，不可省略或改寫。
+
+請只返回有效的JSON格式，不要加任何說明或markdown：
 {
-  "question": "提取的題目內容",
-  "criteria": "提取的評分準則（如無則為空字符串）"
+  "question": "題目完整內容",
+  "materials": "資料一和資料二的完整內容",
+  "criteria": "評分準則內容（如無則為空字符串）"
 }`;
 
   let messages;

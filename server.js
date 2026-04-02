@@ -691,16 +691,8 @@ async function generatePracticalExamWithGemini(apiKey, modelName, fileData, text
     article: '專題文章'
   };
 
-  const prompt = (clientSystemPrompt || '') + `
-
-你是一位專業的DSE中文科試題設計專家。請分析用戶上傳的模擬卷，理解其主題和結構，然後生成一份全新的模擬卷。
-
-【重要要求】
-1. AI分析上傳的模擬卷，理解其主題和結構
-2. 生成一份全新的模擬卷，包括題目、評分參考和示範文章
-3. 新模擬卷保持相同的主題方向，但內容完全不同
-4. 新模擬卷必須符合用戶選擇的文體格式要求
-5. 用戶選擇的文體是：${genreNames[genre] || genre}
+  // 完全使用前端傳來的 clientSystemPrompt，不在後端另加舊 prompt 避免衝突
+  const prompt = (clientSystemPrompt || `你是一位專業的DSE中文科試題設計專家，請分析模擬卷並生成全新模擬卷，文體為${genreNames[genre] || genre}。`) + `
 
 【資料內容格式要求 - 必須遵守】
 - 資料內容必須以簡短段落、對話、列點的形式呈現
@@ -1240,15 +1232,7 @@ async function generatePracticalExamWithOpenAI(apiKey, modelName, fileData, text
     article: '專題文章'
   };
 
-  const systemPrompt = (clientSystemPrompt || '') + `
-
-你是一位專業的DSE中文科試題設計專家。請分析用戶上傳的模擬卷，理解其主題和結構，然後生成一份全新的模擬卷。
-
-【重要要求】
-1. 新模擬卷必須保持與原卷相同的主題/主題方向
-2. 但內容必須完全不同（不同的情境、不同的資料、不同的具體要求）
-3. 用戶選擇的文體是：${genreNames[genre] || genre}
-4. 新模擬卷必須符合該文體的格式要求
+  const systemPrompt = (clientSystemPrompt || `你是一位專業的DSE中文科試題設計專家，請分析模擬卷並生成全新模擬卷，文體為${genreNames[genre] || genre}。`) + `
 
 【資料內容格式要求 - 必須遵守】
 - 資料內容必須以簡短段落、對話、列點的形式呈現
@@ -1695,15 +1679,7 @@ async function generatePracticalExamWithCustom(apiKey, baseURL, modelName, fileD
     article: '專題文章'
   };
 
-  const systemPrompt = (clientSystemPrompt || '') + `
-
-你是一位專業的DSE中文科試題設計專家。請分析用戶上傳的模擬卷，理解其主題和結構，然後生成一份全新的模擬卷。
-
-【重要要求】
-1. 新模擬卷必須保持與原卷相同的主題/主題方向
-2. 但內容必須完全不同（不同的情境、不同的資料、不同的具體要求）
-3. 用戶選擇的文體是：${genreNames[genre] || genre}
-4. 新模擬卷必須符合該文體的格式要求
+  const systemPrompt = (clientSystemPrompt || `你是一位專業的DSE中文科試題設計專家，請分析模擬卷並生成全新模擬卷，文體為${genreNames[genre] || genre}。`) + `
 
 【資料內容格式要求 - 必須遵守】
 - 資料內容必須以簡短段落、對話、列點的形式呈現

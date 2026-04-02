@@ -140,7 +140,7 @@ app.post('/api/extract-question-criteria', async (req, res) => {
 // 批改作文
 app.post('/api/grade', async (req, res) => {
   try {
-    const { apiKey, apiType, model, baseURL, essayText, question, customCriteria, gradingMode, contentPriority, enhancementDirection, genre, infoPoints, devItems, formatRequirements } = req.body;
+    const { apiKey, apiType, model, baseURL, essayText, question, customCriteria, gradingMode, contentPriority, enhancementDirection, genre, infoPoints, devItems, formatRequirements, materials } = req.body;
     
     if (!apiKey) {
       return res.status(400).json({ success: false, message: 'API 密鑰不能為空' });
@@ -157,14 +157,14 @@ app.post('/api/grade', async (req, res) => {
 
     let result;
     if (apiType === 'gemini') {
-      result = await gradeWithGemini(apiKey, model, truncatedText, question, customCriteria, gradingMode, contentPriority, enhancementDirection, genre, infoPoints, devItems, formatRequirements);
+      result = await gradeWithGemini(apiKey, model, truncatedText, question, customCriteria, gradingMode, contentPriority, enhancementDirection, genre, infoPoints, devItems, formatRequirements, materials);
     } else if (apiType === 'custom') {
       if (!baseURL) {
         return res.status(400).json({ success: false, message: '自定義 API 需要提供 API 基礎 URL' });
       }
-      result = await gradeWithCustom(apiKey, baseURL, model, truncatedText, question, customCriteria, gradingMode, contentPriority, enhancementDirection, genre, infoPoints, devItems, formatRequirements);
+      result = await gradeWithCustom(apiKey, baseURL, model, truncatedText, question, customCriteria, gradingMode, contentPriority, enhancementDirection, genre, infoPoints, devItems, formatRequirements, materials);
     } else if (apiType === 'openai') {
-      result = await gradeWithOpenAI(apiKey, model, truncatedText, question, customCriteria, gradingMode, contentPriority, enhancementDirection, genre, infoPoints, devItems, formatRequirements);
+      result = await gradeWithOpenAI(apiKey, model, truncatedText, question, customCriteria, gradingMode, contentPriority, enhancementDirection, genre, infoPoints, devItems, formatRequirements, materials);
     } else {
       return res.status(400).json({ success: false, message: '未知的 API 類型: ' + apiType });
     }
@@ -608,12 +608,12 @@ async function extractQuestionCriteriaWithGemini(apiKey, modelName, fileData, te
   return safeJSONParse(content, 'extract-question-criteria');
 }
 
-async function gradeWithGemini(apiKey, modelName, essayText, question, customCriteria, gradingMode = 'secondary', contentPriority = false, enhancementDirection = 'auto', genre = '', infoPoints = [], devItems = {}, formatRequirements = []) {
+async function gradeWithGemini(apiKey, modelName, essayText, question, customCriteria, gradingMode = 'secondary', contentPriority = false, enhancementDirection = 'auto', genre = '', infoPoints = [], devItems = {}, formatRequirements = [], materials = '') {
   const normalizedModelName = normalizeGeminiModelName(modelName);
   const model = `models/${normalizedModelName}`;
   
   const systemPrompt = buildGradingPrompt(gradingMode, contentPriority, enhancementDirection, genre, infoPoints, devItems, formatRequirements);
-  const userPrompt = buildUserPrompt(essayText, question, customCriteria, gradingMode, genre);
+  const userPrompt = buildUserPrompt(essayText, question, customCriteria, gradingMode, genre, materials);
 
   const requestBody = {
     contents: [{
@@ -1179,11 +1179,11 @@ async function extractQuestionCriteriaWithOpenAI(apiKey, modelName, fileData, te
   return JSON.parse(content);
 }
 
-async function gradeWithOpenAI(apiKey, modelName, essayText, question, customCriteria, gradingMode = 'secondary', contentPriority = false, enhancementDirection = 'auto', genre = '', infoPoints = [], devItems = {}, formatRequirements = []) {
+async function gradeWithOpenAI(apiKey, modelName, essayText, question, customCriteria, gradingMode = 'secondary', contentPriority = false, enhancementDirection = 'auto', genre = '', infoPoints = [], devItems = {}, formatRequirements = [], materials = '') {
   const model = modelName || 'gpt-4o';
   
   const systemPrompt = buildGradingPrompt(gradingMode, contentPriority, enhancementDirection, genre, infoPoints, devItems, formatRequirements);
-  const userPrompt = buildUserPrompt(essayText, question, customCriteria, gradingMode, genre);
+  const userPrompt = buildUserPrompt(essayText, question, customCriteria, gradingMode, genre, materials);
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -1623,12 +1623,12 @@ async function extractQuestionCriteriaWithCustom(apiKey, baseURL, modelName, fil
   return JSON.parse(content);
 }
 
-async function gradeWithCustom(apiKey, baseURL, modelName, essayText, question, customCriteria, gradingMode = 'secondary', contentPriority = false, enhancementDirection = 'auto', genre = '', infoPoints = [], devItems = {}, formatRequirements = []) {
+async function gradeWithCustom(apiKey, baseURL, modelName, essayText, question, customCriteria, gradingMode = 'secondary', contentPriority = false, enhancementDirection = 'auto', genre = '', infoPoints = [], devItems = {}, formatRequirements = [], materials = '') {
   const model = modelName || 'gpt-4o';
   const normalizedURL = baseURL.endsWith('/v1') ? baseURL : `${baseURL}/v1`;
   
   const systemPrompt = buildGradingPrompt(gradingMode, contentPriority, enhancementDirection, genre, infoPoints, devItems, formatRequirements);
-  const userPrompt = buildUserPrompt(essayText, question, customCriteria, gradingMode, genre);
+  const userPrompt = buildUserPrompt(essayText, question, customCriteria, gradingMode, genre, materials);
 
   const response = await fetch(`${normalizedURL}/chat/completions`, {
     method: 'POST',
@@ -2175,12 +2175,37 @@ function buildPracticalGradingPrompt(genre = '', infoPoints = [], devItems = {},
 
   // 格式要求
   const formatDefaults = {
-    speech:     ['稱謂（先尊後卑）', '自我介紹', '文末致謝語（多謝各位）'],
-    letter:     ['上款／稱謂', '署名及啟告語', '日期'],
-    proposal:   ['上款', '標題（置中）', '署名', '日期'],
-    report:     ['稱謂／上款', '標題（置中）', '署名及啟告語', '日期'],
-    commentary: ['標題', '署名及身份'],
-    article:    ['標題', '署名及身份'],
+    speech:     [
+      '稱謂：開首頂格，按先尊後卑排列，末尾須有冒號（例如：校長、各位老師、各位同學：）',
+      '自我介紹：引入正文前交代身份',
+      '文末致謝：文章最末尾（例如：多謝各位。）',
+    ],
+    letter:     [
+      '上款／稱謂：開首頂格書寫（例如：王老師／各位同學：）',
+      '祝頌語：正文後先空兩格寫「祝」，下一行頂格寫祝福語（例如：祝↵教安）',
+      '署名：分兩行靠右，身份行空兩格、姓名行頂格（階梯式），姓名後加啟告語（例如：　　學生會主席↵林美珊謹啟）',
+      '日期：署名下一行靠左頂格，寫完整年月日',
+    ],
+    proposal:   [
+      '上款：頂格書寫收信人（例如：圖書館主任張老師：）',
+      '標題：置中書寫，必須包含「建議」二字（例如：優化「電子閱讀推廣計劃」建議）',
+      '署名：分兩行靠右，身份行空兩格、姓名行頂格（階梯式），姓名後加謹啟（例如：　　文學社社長↵周子晴謹啟）',
+      '日期：署名下一行靠左頂格，寫完整年月日',
+    ],
+    report:     [
+      '上款：頂格書寫呈交對象（例如：陳校長：）',
+      '標題：置中書寫，必須包含「報告」二字（例如：「校園問卷調查」工作報告）',
+      '署名：分兩行靠右，身份行空兩格、姓名行頂格（階梯式），姓名後加謹啟（例如：　　學生會會長↵王子樂謹啟）',
+      '日期：署名下一行靠左頂格，寫完整年月日',
+    ],
+    commentary: [
+      '標題：文章頂部置中書寫，交代文章主題',
+      '署名：文末分兩行靠右，身份行空兩格、姓名行頂格（階梯式），不寫「啟」（例如：　　學生會主席↵林美珊）',
+    ],
+    article:    [
+      '標題：文章頂部置中書寫，帶出主題核心價值',
+      '署名：文末分兩行靠右，身份行空兩格、姓名行頂格（階梯式），不寫「啟」（例如：　　戲劇學會主席↵蘇樂行）',
+    ],
   };
   const formatItems = (formatRequirements && formatRequirements.length > 0)
     ? formatRequirements
@@ -2268,6 +2293,41 @@ ${formatList}
 - 0分：空白卷或毫無組織可言。
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+五、增潤文章要求
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+增潤是在學生原文基礎上修改，而非重新撰寫。必須：
+1. 保留學生原有結構和立意，只修正以下問題：
+   - 格式錯誤（如祝頌語位置、署名格式）
+   - 資訊分不足（補充遺漏的必備背景資訊）
+   - 內容發展不足（補充未引用的資料細項，加強拓展闡述）
+2. 拓展闡述的句子（即結合資料細項、個人經歷或具體例子加以展開，超出資料字面內容的引申），用【拓展】和【/拓展】標記包住
+   例如：「靜觀練習坊」教導呼吸和放鬆技巧。【拓展】此活動有助學員在繁忙學習中尋回內心平靜，長遠提升專注力，使學習效率更高。【/拓展】
+3. 不加任何 HTML 或 Markdown 格式，純文字加【拓展】標記
+4. 增潤後字數控制在 550–599 字之間
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+六、示範文章要求
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+嚴格按以下段落結構撰寫全新示範文章，總字數 550–599 字：
+- 開首：約80字（交代身份、背景、計劃名稱及寫作目的，引入正文）
+- 正文一：約200字，結構：
+  ① 引用資料一「活動一」的名稱及具體細項
+  ② 針對資料二「留言一」的疑慮，用活動一細項加以回應
+  ③ 深層拓展：說明活動對人的具體意義或效果（超出資料字面內容）
+- 正文二：約200字，結構：
+  ① 引用資料一「活動二」的名稱及具體細項
+  ② 針對資料二「留言二」的疑慮，用活動二細項加以回應
+  ③ 深層拓展：說明活動對人的具體意義或效果
+- 結尾：約70字（總結計劃意義，呼籲積極參與）
+
+重要原則：
+- 資料一和資料二必須交織在同一段落，而非分段處理
+- 正文中不點名具體人物，以泛指代替（如「有同學擔心……」）
+- 必須包含${genreName}所有必備格式元素
+- 拓展闡述句子用【拓展】和【/拓展】標記包住
+- 純文字加【拓展】標記，不加任何 HTML 或 Markdown 格式
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 輸出格式（必須是有效的JSON）
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {
@@ -2295,13 +2355,13 @@ ${formatList}
     "improvements": ["改善建議（繁體中文）"]
   },
   "formatIssues": ["具體格式問題（繁體中文）"],
-  "enhancedText": "增潤後的文章（繁體中文）",
+  "enhancedText": "增潤後的文章（繁體中文，保留學生原有結構，拓展部分用【拓展】【/拓展】標記）",
   "enhancementNotes": ["修改說明（繁體中文）"],
-  "modelEssay": "示範文章（繁體中文）"
+  "modelEssay": "示範文章（繁體中文，按四段結構，拓展部分用【拓展】【/拓展】標記）"
 }`;
 }
 
-function buildUserPrompt(essayText, question, customCriteria, gradingMode = 'secondary', genre = '') {
+function buildUserPrompt(essayText, question, customCriteria, gradingMode = 'secondary', genre = '', materials = '') {
   const genreNames = {
     speech: '演講辭', letter: '書信／公開信', proposal: '建議書',
     report: '報告', commentary: '評論文章', article: '專題文章'
@@ -2312,11 +2372,18 @@ function buildUserPrompt(essayText, question, customCriteria, gradingMode = 'sec
 ${genreNames[genre] || genre}
 ` : '';
 
+  const materialsNote = (gradingMode === 'practical' && materials)
+    ? `
+## 題目資料（資料一及資料二）
+${materials}
+批改時請對照以上資料，評估學生是否準確引用資料細項並加以拓展。
+` : '';
+
   return `請批改以下學生實用文（若為命題寫作則批改作文）：
 ${genreNote}
 ## 題目
 ${question || '（未提供題目）'}
-
+${materialsNote}
 ## 學生作文
 ${essayText}
 

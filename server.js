@@ -640,8 +640,8 @@ async function gradeWithGemini(apiKey, modelName, essayText, question, customCri
     }],
     generationConfig: {
       temperature: 0.5,
-      maxOutputTokens: 65536,
-      responseMimeType: 'application/json'
+      maxOutputTokens: 65536
+      // responseMimeType 已移除：JSON mode 會使 Gemini 安全過濾更嚴格，導致 PROHIBITED_CONTENT
     },
     safetySettings: GEMINI_SAFETY_SETTINGS
   };
@@ -1978,12 +1978,19 @@ ${essayText}
 
 async function regenerateFeedbackWithGemini(apiKey, modelName, essayText, question, teacherGrading) {
   const prompt = buildFeedbackOnlyPrompt(essayText, question, teacherGrading);
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName || 'gemini-2.0-flash'}:generateContent?key=${apiKey}`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-  });
+  const model = modelName || 'gemini-2.0-flash';
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.7, maxOutputTokens: 8192 },
+        safetySettings: GEMINI_SAFETY_SETTINGS
+      }),
+    }
+  );
   const data = await response.json();
   if (data.promptFeedback?.blockReason) throw new Error(`內容被阻擋: ${data.promptFeedback.blockReason}`);
   const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';

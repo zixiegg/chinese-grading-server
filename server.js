@@ -878,11 +878,13 @@ contentDevelopment 的 table 只列出資料內容細項的整理和拓展要求
       ]
     },
     "formatRequirements": {
-      "title": "格式要求（組織分）",
+      "title": "格式要求（組織分，最多扣2分）",
       "table": [
-        { "item": "格式項目", "requirement": "具體要求", "score": "扣分標準" }
+        { "item": "格式項目（如：欠稱謂）", "requirement": "具體格式要求", "score": "欠缺/多餘" }
       ]
     }
+    // 注意：formatRequirements 只列出各文體的必備格式元素，不包含字數要求
+    // 格式扣分規則由前端統一顯示：錯1-2項扣1分，錯3項或以上扣2分
   },
   "modelEssay": "示範文章（不少於550字，拓展部分用【拓展】【/拓展】標記）"
 }`;
@@ -1441,11 +1443,13 @@ contentDevelopment 的 table 只列出具體細項內容，不在每個細項上
       ]
     },
     "formatRequirements": {
-      "title": "格式要求（組織分）",
+      "title": "格式要求（組織分，最多扣2分）",
       "table": [
-        { "item": "格式項目", "requirement": "具體要求", "score": "扣分標準" }
+        { "item": "格式項目（如：欠稱謂）", "requirement": "具體格式要求", "score": "欠缺/多餘" }
       ]
     }
+    // 注意：formatRequirements 只列出各文體的必備格式元素，不包含字數要求
+    // 格式扣分規則由前端統一顯示：錯1-2項扣1分，錯3項或以上扣2分
   },
   "modelEssay": "示範文章（不少於550字，拓展部分用【拓展】【/拓展】標記）"
 }`;
@@ -1933,11 +1937,13 @@ contentDevelopment 的 table 只列出具體細項內容，不在每個細項上
       ]
     },
     "formatRequirements": {
-      "title": "格式要求（組織分）",
+      "title": "格式要求（組織分，最多扣2分）",
       "table": [
-        { "item": "格式項目", "requirement": "具體要求", "score": "扣分標準" }
+        { "item": "格式項目（如：欠稱謂）", "requirement": "具體格式要求", "score": "欠缺/多餘" }
       ]
     }
+    // 注意：formatRequirements 只列出各文體的必備格式元素，不包含字數要求
+    // 格式扣分規則由前端統一顯示：錯1-2項扣1分，錯3項或以上扣2分
   },
   "modelEssay": "示範文章（不少於550字，拓展部分用【拓展】【/拓展】標記）"
 }`;

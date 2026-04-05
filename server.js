@@ -2065,7 +2065,9 @@ ${essayText}
 
 async function regenerateFeedbackWithGemini(apiKey, modelName, essayText, question, teacherGrading) {
   const prompt = buildFeedbackOnlyPrompt(essayText, question, teacherGrading);
-  const model = modelName || 'gemini-2.0-flash';
+  // 修復：使用normalizeGeminiModelName並加入models/前綴，與gradeWithGemini一致
+  const normalizedModel = normalizeGeminiModelName(modelName || 'gemini-2.0-flash');
+  const model = `models/${normalizedModel}`;
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${apiKey}`,
     {
@@ -2078,9 +2080,14 @@ async function regenerateFeedbackWithGemini(apiKey, modelName, essayText, questi
       }),
     }
   );
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.error?.message || 'Gemini API 請求失敗');
+  }
   const data = await response.json();
   if (data.promptFeedback?.blockReason) throw new Error(`內容被阻擋: ${data.promptFeedback.blockReason}`);
   const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  if (!content) throw new Error('Gemini 返回內容為空');
   return parseFeedbackOnlyResult(content);
 }
 
@@ -2336,7 +2343,7 @@ ${enhancementInstruction}
     "strengths": ["標點優點"],
     "improvements": ["具體指出標點失誤位置及類型"]
   },
-  "enhancedText": "增潤後的完整文章，保留學生原意，修正語病，提升表達，避免AI堆砌感",
+  "enhancedText": "增潤後的完整文章。規則：①保留學生所有段落和原意 ②只修正語病、優化用詞、補充描寫 ③字數必須多於原文字數，不可刪減學生內容 ④避免AI堆砌感，保持學生文風",
   "enhancementNotes": ["只列修改類別，每項5字內，如：修正語病、豐富詞彙、調整句式、加強描寫、深化立意、刪除冗詞，最多5項，不需列出具體句子"],
   "modelEssay": "上上品示範文章，不少於1500字，按開頭/中段/結尾結構，扣緊題目關鍵元素，立意深刻，語言優美"
 }`;
